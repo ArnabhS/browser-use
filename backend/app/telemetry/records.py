@@ -22,6 +22,7 @@ class StepRecord(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     latency_ms: float = 0.0
+    model: str = ""
 
 
 class TabInfo(BaseModel):

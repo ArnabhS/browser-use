@@ -25,3 +25,12 @@ async def test_emit_pushes_usage_event():
     await u.emit(EventEmitter(sink), r)
     assert sink.events[0].event == USAGE
     assert sink.events[0].data["inputTokens"] == 4 and sink.events[0].data["model"] == "x/model"
+
+
+async def test_emit_uses_the_records_own_model_not_the_latest():
+    u = UsageTracker()
+    sink = BufferSink()
+    r1 = u.record("model-a", {"input_tokens": 1, "output_tokens": 1}, 1.0)
+    u.record("model-b", {"input_tokens": 2, "output_tokens": 2}, 1.0)
+    await u.emit(EventEmitter(sink), r1)
+    assert sink.events[0].data["model"] == "model-a"

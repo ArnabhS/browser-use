@@ -12,7 +12,6 @@ class UsageTracker:
         self.input_tokens = 0
         self.output_tokens = 0
         self.calls = 0
-        self._last_model = ""
 
     def record(self, model_name: str, usage_metadata: dict | None, latency_ms: float) -> StepRecord:
         u = usage_metadata or {}
@@ -21,8 +20,7 @@ class UsageTracker:
         self.input_tokens += inp
         self.output_tokens += out
         self.calls += 1
-        self._last_model = model_name
-        return StepRecord(step=0, node="llm", input_tokens=inp, output_tokens=out, latency_ms=latency_ms)
+        return StepRecord(step=0, node="llm", input_tokens=inp, output_tokens=out, latency_ms=latency_ms, model=model_name)
 
     def totals(self) -> dict:
         return {"input_tokens": self.input_tokens, "output_tokens": self.output_tokens, "calls": self.calls}
@@ -31,7 +29,7 @@ class UsageTracker:
         await emitter._emit(  # noqa: SLF001 — intentional internal dispatch
             USAGE,
             {
-                "model": self._last_model,
+                "model": record.model,
                 "inputTokens": record.input_tokens,
                 "outputTokens": record.output_tokens,
                 "latencyMs": record.latency_ms,
