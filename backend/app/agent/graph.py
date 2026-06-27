@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from browser_agent_contracts.models import ActionCall, ActionResult, Observation
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 
 from app.agent.nodes.act import build_act_node
@@ -14,6 +16,17 @@ from app.llm.base import LLMClient
 from app.telemetry.records import ErrorCode, StepRecord
 from app.telemetry.store import TrajectoryStore
 from app.tools.dispatcher import ToolDispatcher
+
+# Types stored in checkpoint state that are not in langgraph's built-in safe list.
+# Passing class objects lets _normalize_module_keys extract (module, classname) tuples
+# automatically, which is what _check_allowed() compares against.
+_ALLOWED_MSGPACK_MODULES = [Observation, ActionCall, ActionResult, StepRecord]
+
+
+def _checkpointer() -> InMemorySaver:
+    return InMemorySaver(
+        serde=JsonPlusSerializer(allowed_msgpack_modules=_ALLOWED_MSGPACK_MODULES)
+    )
 
 
 def build_finalize_node(emitter: EventEmitter, max_steps: int):
@@ -55,4 +68,4 @@ def build_graph(*, session: BrowserSession, llm: LLMClient, emitter: EventEmitte
                             {"act": "act", "reason": "reason", "finalize": "finalize"})
     g.add_conditional_edges("act", route_after_act, {"observe": "observe", "finalize": "finalize"})
     g.add_edge("finalize", END)
-    return g.compile(checkpointer=InMemorySaver())
+    return g.compile(checkpointer=_checkpointer())
