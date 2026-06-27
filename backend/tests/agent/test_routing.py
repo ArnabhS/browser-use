@@ -1,4 +1,4 @@
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage
 from app.agent.state import AgentState
 from app.agent.routing import route_after_reason, route_after_act
 from app.telemetry.records import ErrorCode

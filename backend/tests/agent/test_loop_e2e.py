@@ -21,7 +21,7 @@ async def test_happy_path_reaches_done_via_complete():
     final = await run(graph, task="log in", thread_id="t1")
     assert final.status == "done" and final.success is True and final.reason == "done"
     assert sess.acts[0].name == "click"
-    assert any(e.type == "finalize" for e in sink.events)
+    assert any(e.event == "finalize" for e in sink.events)
     assert any(r.node == "act" for r in store.records["t1"])
 
 

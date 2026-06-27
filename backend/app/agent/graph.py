@@ -32,7 +32,9 @@ def build_finalize_node(emitter: EventEmitter, max_steps: int):
             delta = {"status": "failed", "error_code": ErrorCode.MAX_STEPS}
         else:
             delta = {"status": "failed", "error_code": ErrorCode.NO_ACTION}
-        await emitter.emit_finalize(bool(state.success), state.reason or str(delta.get("error_code", "")))
+        err = delta.get("error_code") or state.error_code
+        reason = state.reason or (err.value if err else "")
+        await emitter.emit_finalize(bool(state.success), reason)
         return {**delta, "history": [StepRecord(step=state.step, node="finalize",
                                                 error_code=delta.get("error_code"))]}
 

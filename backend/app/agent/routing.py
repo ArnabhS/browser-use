@@ -3,7 +3,6 @@ from __future__ import annotations
 from langchain_core.messages import AIMessage
 
 from app.agent.state import AgentState
-from app.telemetry.records import ErrorCode
 
 _DEFAULT_MAX_STEPS = 25
 

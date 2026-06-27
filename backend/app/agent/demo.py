@@ -33,7 +33,7 @@ async def _demo() -> None:
     final = await run(graph, task="log in (fake demo)", thread_id="demo")
     print(f"status={final.status} success={final.success} reason={final.reason!r}")
     for ev in sink.events:
-        print(f"  · {ev.type}: {ev.data}")
+        print(f"  · {ev.event}: {ev.data}")
 
 
 if __name__ == "__main__":

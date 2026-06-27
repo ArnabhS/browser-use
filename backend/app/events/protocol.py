@@ -21,6 +21,6 @@ def _now_iso() -> str:
 
 
 class AgentEvent(BaseModel):
-    type: str
+    event: str
     data: dict[str, Any] = Field(default_factory=dict)
     ts: str = Field(default_factory=_now_iso)

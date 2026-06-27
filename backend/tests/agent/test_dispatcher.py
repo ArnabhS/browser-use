@@ -59,3 +59,14 @@ async def test_complete_sets_terminal_fields():
         state=_state(), session=_RecordingSession(), emitter=EventEmitter(BufferSink()),
     )
     assert delta == {"finished": True, "success": True, "reason": "logged in"}
+
+
+async def test_remember_preserves_existing_keys():
+    d = ToolDispatcher()
+    state = _state()
+    state.agent_memory = {"first": "1"}
+    msg, delta = await d.dispatch(
+        {"name": "Remember", "args": {"key": "second", "value": "2"}, "id": "r2"},
+        state=state, session=_RecordingSession(), emitter=EventEmitter(BufferSink()),
+    )
+    assert delta["agent_memory"] == {"first": "1", "second": "2"}

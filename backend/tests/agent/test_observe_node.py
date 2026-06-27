@@ -27,4 +27,4 @@ async def test_observe_node_writes_observation_and_message():
     assert delta["observation"].url == "https://x"
     assert isinstance(delta["messages"][0], HumanMessage) and "[1] button" in delta["messages"][0].content
     assert delta["history"][0].node == "observe"
-    assert any(e.type == "observation" for e in sink.events)
+    assert any(e.event == "observation" for e in sink.events)

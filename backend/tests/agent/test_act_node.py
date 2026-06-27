@@ -29,3 +29,14 @@ async def test_act_complete_sets_finished():
     node = build_act_node(ToolDispatcher(), FakeBrowserSession(), EventEmitter(BufferSink()), InMemoryTrajectoryStore())
     delta = await node(_state_with_toolcall("Complete", {"success": True, "reason": "done"}))
     assert delta["finished"] is True and delta["success"] is True and delta["reason"] == "done"
+
+
+async def test_act_accumulates_memory_across_multiple_tool_calls():
+    s = AgentState(task="t", thread_id="t1", agent_memory={"a": "1"})
+    s.messages = [AIMessage(content="noting two things", tool_calls=[
+        {"name": "Remember", "args": {"key": "b", "value": "2"}, "id": "1"},
+        {"name": "Remember", "args": {"key": "c", "value": "3"}, "id": "2"},
+    ])]
+    node = build_act_node(ToolDispatcher(), FakeBrowserSession(), EventEmitter(BufferSink()), InMemoryTrajectoryStore())
+    delta = await node(s)
+    assert delta["agent_memory"] == {"a": "1", "b": "2", "c": "3"}
