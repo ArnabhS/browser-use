@@ -55,6 +55,7 @@ def build_reason_node(llm: LLMClient, emitter: EventEmitter):
                     "status": "failed",
                     "error_code": ErrorCode.REASONING_MISSING,
                     "finished": True,
+                    **nudge_delta,
                 }
 
         if _has_reasoning(ai):

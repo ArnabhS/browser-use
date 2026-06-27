@@ -14,6 +14,7 @@ async def test_reason_emits_ai_message_with_tool_call():
     delta = await node(state)
     assert delta["step"] == 1
     assert delta["messages"][0].tool_calls[0]["name"] == "Click"
+    assert delta["history"][0].node == "reason"
 
 
 async def test_reason_missing_reasoning_retries_then_fails():
@@ -27,3 +28,15 @@ async def test_reason_missing_reasoning_retries_then_fails():
     assert delta["status"] == "failed" and delta["error_code"] == ErrorCode.REASONING_MISSING
     assert delta["finished"] is True
     assert llm.calls == 2  # retried exactly once
+
+
+async def test_reason_nudges_on_reentry_without_tool_call():
+    # Last message is an AIMessage with no tool calls -> nudge: increment nudge_count, then proceed.
+    llm = FakeLLMClient(turns=[ai("now I'll click", [{"name": "Click", "args": {"index": 1}, "id": "1"}])])
+    node = build_reason_node(llm, EventEmitter(BufferSink()))
+    state = AgentState(task="t", thread_id="t1",
+                       messages=[AIMessage(content="prev turn, no tool", tool_calls=[])])
+    delta = await node(state)
+    assert delta["nudge_count"] == 1
+    assert delta["step"] == 1
+    assert delta["messages"][0].tool_calls[0]["name"] == "Click"
