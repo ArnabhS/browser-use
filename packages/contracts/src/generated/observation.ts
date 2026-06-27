@@ -1,0 +1,4 @@
+import { z } from "zod"
+
+export const ObservationSchema = z.object({ "changed": z.union([z.string(), z.null()]).default(null), "droppedCount": z.number().int().default(0), "elements": z.array(z.object({ "index": z.number().int(), "name": z.string().default(""), "role": z.string(), "value": z.union([z.string(), z.null()]).default(null) })).optional(), "protocolVersion": z.string().default("1.0.0"), "screenshotRef": z.union([z.string(), z.null()]).default(null), "title": z.string().default(""), "url": z.string(), "viewport": z.object({ "height": z.number().int(), "scrollX": z.number().int().default(0), "scrollY": z.number().int().default(0), "width": z.number().int() }) })
+

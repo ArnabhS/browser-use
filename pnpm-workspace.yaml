@@ -1,0 +1,8 @@
+packages:
+  - "packages/*"
+  - "frontend"
+  - "bridge-extension"
+allowBuilds:
+  esbuild: true
+onlyBuiltDependencies:
+  - esbuild
