@@ -1,0 +1,19 @@
+[project]
+name = "browser-agent-contracts"
+version = "0.1.0"
+description = "Shared wire contracts (source of truth) for the browser agent."
+requires-python = ">=3.12"
+dependencies = ["pydantic>=2.9"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src_py/browser_agent_contracts"]
+
+[dependency-groups]
+dev = ["pytest>=8.3"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src_py"]
