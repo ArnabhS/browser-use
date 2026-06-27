@@ -1,0 +1,23 @@
+{
+  "properties": {
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    },
+    "protocolVersion": {
+      "default": "1.0.0",
+      "title": "Protocolversion",
+      "type": "string"
+    },
+    "type": {
+      "title": "Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "type"
+  ],
+  "title": "Envelope",
+  "type": "object"
+}
