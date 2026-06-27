@@ -18,4 +18,12 @@ describe("Observation contract", () => {
   it("rejects an observation with a wrong-typed url", () => {
     expect(() => ObservationSchema.parse({ url: 123, viewport: {} })).toThrow();
   });
+
+  it("rejects a non-object viewport", () => {
+    expect(() => ObservationSchema.parse({ url: "https://x.com", viewport: 42 })).toThrow();
+  });
+
+  it("rejects a viewport missing required width/height", () => {
+    expect(() => ObservationSchema.parse({ url: "https://x.com", viewport: { scrollX: 0 } })).toThrow();
+  });
 });
