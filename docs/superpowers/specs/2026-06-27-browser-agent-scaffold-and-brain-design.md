@@ -33,18 +33,19 @@ feature logic); stand up the **contracts source of truth** (Pydantic v2 → JSON
 tooling (`pnpm-workspace.yaml`, `justfile`, `.env.example`); promote the source contract to root
 `CLAUDE.md`.
 
-**Phase B — Build the main browser agent (backend brain):** a LangGraph tool-calling ReAct loop —
-`observe → reason → act → (re-observe) → …` — terminating on an explicit `complete()` tool. Built
-**fake-first** for `BrowserSession`, **real** for the OpenRouter `LLMClient`. Includes the five
-borrowed subsystems: **tools** (registry + structured browser/memory/control tools), **memory**
-(MEMORY.md + async writer), **prompts** (decomposed Jinja2), **events** (emitter + protocol +
-sink), and **metering/compaction**.
+**Phase B — Build the main browser agent (backend brain), driving a real browser:** a LangGraph
+tool-calling ReAct loop — `observe → reason → act → (re-observe) → …` — terminating on an explicit
+`complete()` tool. Built against a **real `LocalCDPSession`** (Playwright shell + CDP core) driving
+local headless Chrome, with the **real Python observation funnel**; the OpenRouter `LLMClient` is real
+too. `FakeBrowserSession` is kept **only as a unit-test double** (never on the real path). Includes the
+five borrowed subsystems — **tools** (registry + structured browser/memory/control tools), **memory**
+(MEMORY.md + async writer), **prompts** (decomposed Jinja2), **events** (emitter + protocol + sink),
+**metering/compaction** — **plus the real eyes**: `LocalCDPSession` + the observation funnel (§7.6).
 
 **Out of scope this milestone (YAGNI — later milestones):**
 
-- Real browser control (`LocalCDPSession` / CDP / Python observation funnel) — M2.
-- The extension's funnel + `chrome.debugger` dispatch + WS relay — M4.
-- Real cockpit UX; FE stays a scaffolded shell — M3.
+- The extension's funnel + `chrome.debugger` dispatch + WS relay — M3 (the extension milestone).
+- Real cockpit UX; FE stays a scaffolded shell — M2 (the cockpit milestone).
 - WS auth, Postgres/SQLite persistence, contract-drift CI beyond a local `just` target.
 - **Code-execution / sandbox** — explicitly rejected for actions (§10); a hard-sandboxed `run_python`
   escape tool is a possible *future* addition only if a real need appears.
@@ -57,7 +58,7 @@ sink), and **metering/compaction**.
 | 1 | Monorepo, all 4 units laid out up front | User chose structure-first. |
 | 2 | Scaffold structure → then build the brain | User's explicit sequence. |
 | 3 | Contracts **Pydantic-first** (Python authors truth → JSON Schema → Zod) | Backend is authority; lossless. |
-| 4 | Brain built **fake-first** for `BrowserSession`, **real** OpenRouter `LLMClient` | TDD per spec; key is available. |
+| 4 | Brain built against a **real `LocalCDPSession`** from the start (old "M2 real eyes" absorbed into Phase B); `FakeBrowserSession` kept **only as a unit-test double** | User wants real browser control in Phase B; real OpenRouter `LLMClient` (key available). |
 | 5 | Real OpenRouter now (key ready) | `OPENROUTER_API_KEY` via gitignored `.env`, server-side only. |
 | 6 | Models from env config (not hardcoded) | Single-agent loop ⇒ one primary `AGENT_MODEL` (the `reason` node); room for `SUMMARIZER_MODEL` (compaction layer 2) and a future `VALIDATOR_MODEL`. |
 | 7 | **Actions = structured tool-calls, NOT code execution** | Adversarial web ⇒ code-exec risks RCE via prompt injection; index-staleness weakens code-exec's composition benefit; tool-calls are schema-validated, safer, observable. Re-aligns with the spec's `ActionCall{name,args}`. See §10. |
@@ -67,6 +68,7 @@ sink), and **metering/compaction**.
 | 11 | **Memory = MEMORY.md document** (`## Knowledge` + `## Run History`) + in-RAM `agent_memory` mirror; **async non-blocking** writer | test_gen_agent's model + Mahoraga's queue+worker write pattern. |
 | 12 | `remember(key, value)` structured (not freeform string) | Parseable Knowledge section. |
 | 13 | Borrow test_gen's **events / decomposed Jinja2 prompts / ToolRegistry / compaction / metering** | Proven patterns in this exact stack (LangGraph + OpenRouter). |
+| 14 | Browser via **Playwright shell + CDP core** | Playwright owns launch / bundled Chromium / targets / nav / screenshot; raw CDP via `cdp_session` for `DOMSnapshot` (geometry), `Accessibility.getFullAXTree`, and `Input.*` (trusted, `isTrusted:true`). Node-hop overhead ~0.5%/turn (LLM-dominated) — negligible. A thin `CdpClient` seam keeps Playwright-vs-raw swappable. |
 
 ## 4. Repo layout (at the existing root)
 
@@ -81,8 +83,8 @@ browser-use/
 │  │  ├─ prompts/      # agent/{system,identity,policy,context,tools,output-format}.jinja2; skills/*.jinja2
 │  │  ├─ memory/       # document.py (build/parse/update_knowledge/append_run), store.py (port), async_markdown.py
 │  │  ├─ events/       # protocol.py (AgentEvent + types), emitter.py (EventEmitter), sink.py (EventSink port)
-│  │  ├─ browser/      # BrowserSession port; FakeBrowserSession (LocalCDP/ExtensionBridge later)
-│  │  ├─ observation/  # Observation model (from contracts); server funnel arrives in M2
+│  │  ├─ browser/      # BrowserSession port; LocalCDPSession (Playwright+CDP); cdp_client.py (CDP seam); FakeBrowserSession (test double)
+│  │  ├─ observation/  # Observation model + funnel/{extract,visibility,occlusion,wrapper_collapse,som_indexer,reading_order}.py + pipeline.py + index_map.py
 │  │  ├─ actions/      # ActionCall types (from contracts) + dispatch helper (tool → ActionCall → act())
 │  │  ├─ llm/          # LLMClient port + OpenRouter impl (ChatOpenAI) + usage.py (UsageTracker)
 │  │  ├─ telemetry/    # StepRecord, ErrorCode, TrajectoryStore (in-memory)
@@ -146,7 +148,7 @@ route_act:     complete() was called → END(done | fail, per success)
 `reason` enforces **think-before-act**: if reasoning is empty/trivial, retry once, else fail
 `REASONING_MISSING`. Indices are never reused across turns (re-observe rebuilds them).
 
-## 7. The five borrowed subsystems
+## 7. Subsystems (five borrowed + the real eyes)
 
 ### 7.1 Tools (test_gen `ToolRegistry`)
 
@@ -206,6 +208,30 @@ route_act:     complete() was called → END(done | fail, per success)
   **Layer 2** (fast-follow) LLM-summarize older messages, keep first-2 + last-6 verbatim, emit
   `compact_summary`. Emit `context_status` each turn.
 
+### 7.6 Real eyes — `LocalCDPSession` + observation funnel (from the source contract)
+
+- **`LocalCDPSession`** (`browser/`) implements the `BrowserSession` port over **Playwright**
+  (async API): launches bundled headless Chromium, manages targets/tabs, navigation, and screenshots.
+  A thin **`CdpClient`** seam wraps `page.context.new_cdp_session(page)` so the funnel's `Extract`
+  stage and the action dispatch speak **raw CDP** for the fidelity/perf-critical calls —
+  `DOMSnapshot.captureSnapshot` (nodes + computed styles + layout boxes/geometry),
+  `Accessibility.getFullAXTree` (roles/names), `Page.captureScreenshot`, and `Input.dispatchMouseEvent`
+  / `Input.dispatchKeyEvent` (trusted, `isTrusted:true`). Keeping CDP behind `CdpClient` makes the
+  Playwright-vs-raw choice swappable without touching the funnel.
+- **Observation funnel** (`observation/funnel/`) — composable stages (SRP/OCP, each one class with one
+  transform), per source-contract §4, run as a pipeline producing the `Observation` contract:
+  `Extract` (CDP snapshot+AX+geometry+screenshot) → `VisibilityFilter` → `OcclusionCuller` →
+  `WrapperCollapser` → `SoMIndexer` (assigns `[N]`; builds the **hidden `index → {centerX, centerY,
+  backendNodeId}` map** kept server-side) → `ReadingOrderFormatter` (compact list in reading order).
+  Enforce a token budget; **log dropped/hidden counts** (no silent truncation).
+- **Action dispatch:** a tool's `ActionCall` resolves `index → geometry` via the SoM map, then
+  performs trusted input through `CdpClient` (`Input.*`). Per-action timeout walls (`ACTION_TIMEOUT`).
+  After acting, settle/stability wait (start: fixed bound; adaptive per-host is a fast-follow), then
+  re-observe (fresh indices).
+- **Incremental delivery:** the pipeline carries all six stage slots from day one (OCP), but lands in
+  order of value — `Extract` + `VisibilityFilter` + `SoMIndexer` + `ReadingOrderFormatter` first (a
+  correct, usable observation), then `OcclusionCuller` + `WrapperCollapser` as quality fast-follows.
+
 ## 8. Testing strategy (TDD, red→green per unit)
 
 - **Contracts:** Pydantic round-trip; emitted schema matches committed `schema/*.json`; vitest parses a
@@ -214,20 +240,31 @@ route_act:     complete() was called → END(done | fail, per success)
   writer is non-blocking (enqueue returns immediately) and drains on `stop()`.
 - **Tools:** each tool builds the right `ActionCall`; registry generates correct descriptions; effect
   tools mutate state via the node; `complete()` sets terminal state.
-- **Graph (pytest, fakes for both ports):** scripted `Observation` + canned tool-call response →
-  assert routed path (`act`/`reason`-nudge/`END`) and emitted `StepRecord`s. Cover: happy path to
-  `done` via `complete()`; `NO_ACTION` after a nudge; `REASONING_MISSING`; action error → retry →
-  `fail`; metering populated each LLM call.
+- **Funnel stages (unit, synthetic CDP-snapshot fixtures):** each stage in isolation — visibility
+  drops hidden/zero-size/off-screen; occlusion culls covered nodes; wrapper-collapse flattens layout
+  divs; `SoMIndexer` assigns stable-within-turn `[N]` and builds the geometry map; reading-order
+  serialization respects the token budget and **logs dropped/hidden counts**.
+- **Graph (pytest, `FakeBrowserSession` + fake `LLMClient`):** the fast/hermetic path — scripted
+  `Observation` + canned tool-call → assert routed path (`act`/`reason`-nudge/`END`) and emitted
+  `StepRecord`s. Cover: happy path to `done` via `complete()`; `NO_ACTION` after a nudge;
+  `REASONING_MISSING`; action error → retry → `fail`; metering populated each LLM call.
+- **Integration (real headless Chrome, local fixtures):** full funnel + trusted-input dispatch via
+  `LocalCDPSession` against **local static HTML fixtures** (served by the test / `file://` — never
+  live sites): assert the funnel yields the expected element list and a scripted task drives to
+  `complete()`. Marked slow; excluded from the fast unit run.
 - **OpenRouter impl:** stubbed transport (no live network in CI); one optional live smoke test gated
   on the real key.
 
 ## 9. Acceptance criteria
 
-- `just setup` installs backend (uv) + JS workspace (pnpm); `just gen-contracts` + `just check` clean.
-- `uv run pytest` green across the units above.
+- `just setup` installs backend (uv, incl. `playwright install chromium`) + JS workspace (pnpm);
+  `just gen-contracts` + `just check` clean.
+- `uv run pytest` green: contracts, memory, tools, funnel stages, and the graph (on fakes) — the fast
+  hermetic suite.
 - With a real key in `.env`, a `run_demo` `astream`s a run using the **real** OpenRouter `LLMClient`
-  (tools bound) against the **fake** `BrowserSession`, reaches a terminal status via `complete()`,
-  streams node/token/usage events, and writes a `memory.md`.
+  (tools bound) against the **real `LocalCDPSession`** on a **local fixture page** in headless Chrome:
+  the funnel produces a numbered `Observation`, the agent clicks/types via trusted CDP input, reaches
+  a terminal status via `complete()`, streams node/token/usage events, and writes a `memory.md`.
 - FE + extension folders install/build as empty scaffolds.
 
 ## 10. Why tool-calls, not code execution (rationale)
@@ -242,12 +279,10 @@ calls. Industry precedent (browser-use, computer-use, Operator) is structured ac
 
 ## 11. Later milestones (context, not this spec)
 
-- **M2 — Real eyes:** `LocalCDPSession` (headless Chrome over CDP) + Python observation funnel
-  (Extract→Visibility→Occlusion→WrapperCollapse→SoMIndexer→ReadingOrder); swap the fake
-  `BrowserSession` with **zero graph changes**. Adaptive settle. Compaction layer 2. Enable code-exec
-  sandbox decision only if needed.
-- **M3 — Cockpit:** FastAPI WS hub + `EventSink`→WS; React cockpit (live screenshots, reasoning/token
+- **M2 — Cockpit:** FastAPI WS hub + `EventSink`→WS; React cockpit (live screenshots, reasoning/token
   stream, plan, run controls, take-over via LangGraph `interrupt`).
-- **M4 — Extension:** TS funnel stages + `chrome.debugger` trusted-input dispatch + authenticated WS
-  relay; `ExtensionBridgeSession` drives the user's real Chrome.
+- **M3 — Extension:** TS funnel stages + `chrome.debugger` trusted-input dispatch + authenticated WS
+  relay; `ExtensionBridgeSession` drives the user's real Chrome — swapped in for `LocalCDPSession`
+  with **zero graph changes** (the SOLID payoff). Fast-follows from Phase B that land here or alongside:
+  adaptive per-host settle, compaction layer 2.
 ```
