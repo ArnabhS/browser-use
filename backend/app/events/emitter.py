@@ -11,6 +11,7 @@ from app.events.protocol import (
     PLAN_UPDATE,
     REASONING,
     STATUS,
+    STREAM,
     TOOL_CALL,
 )
 from app.events.sink import EventSink
@@ -48,3 +49,7 @@ class EventEmitter:
 
     async def emit_finalize(self, success: bool, reason: str) -> None:
         await self._emit(FINALIZE, {"success": success, "reason": reason})
+
+    async def emit_stream(self, token: str) -> None:
+        if token:
+            await self._emit(STREAM, {"token": token})
