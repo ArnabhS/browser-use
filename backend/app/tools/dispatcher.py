@@ -17,6 +17,12 @@ _BROWSER_ACTION = {
     "Scroll": "scroll",
     "Extract": "extract",
     "WaitFor": "wait_for",
+    "PressKey": "press_key",
+    "Clear": "clear",
+    "SelectOption": "select_option",
+    "NewTab": "new_tab",
+    "SwitchTab": "switch_tab",
+    "CloseTab": "close_tab",
 }
 
 

@@ -37,6 +37,37 @@ class WaitFor(BaseModel):
     seconds: float = 1.0
 
 
+class PressKey(BaseModel):
+    """Press a single key or chord (e.g. 'Enter', 'Tab', 'Escape') — use after typing to submit."""
+    key: str
+
+
+class Clear(BaseModel):
+    """Clear the text in the input element with the given index before typing fresh text."""
+    index: int
+
+
+class SelectOption(BaseModel):
+    """Choose an option (by visible text or value) in the dropdown <select> at the given index."""
+    index: int
+    value: str
+
+
+class NewTab(BaseModel):
+    """Open a new browser tab at the given URL and switch to it."""
+    url: str
+
+
+class SwitchTab(BaseModel):
+    """Switch the active tab to the one with the given target_id (from the tab list)."""
+    target_id: str
+
+
+class CloseTab(BaseModel):
+    """Close the tab with the given target_id."""
+    target_id: str
+
+
 class Remember(BaseModel):
     """Save a durable key/value note to working memory for later steps."""
     key: str
@@ -59,11 +90,13 @@ class Complete(BaseModel):
 
 
 TOOL_SPECS: list[type[BaseModel]] = [
-    Navigate, Click, TypeText, Scroll, Extract,
-    WaitFor, Remember, Recall, SetPlan, Complete,
+    Navigate, Click, TypeText, Scroll, Extract, WaitFor,
+    PressKey, Clear, SelectOption, NewTab, SwitchTab, CloseTab,
+    Remember, Recall, SetPlan, Complete,
 ]
 
-BROWSER_TOOLS = {"Navigate", "Click", "TypeText", "Scroll", "Extract", "WaitFor"}
+BROWSER_TOOLS = {"Navigate", "Click", "TypeText", "Scroll", "Extract", "WaitFor",
+                 "PressKey", "Clear", "SelectOption", "NewTab", "SwitchTab", "CloseTab"}
 MEMORY_TOOLS = {"Remember", "Recall"}
 CONTROL_TOOLS = {"SetPlan", "Complete"}
 
