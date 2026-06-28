@@ -36,10 +36,30 @@ def build_reason_node(llm: LLMClient, emitter: EventEmitter):
         messages = list(state.messages)
         nudge_delta: dict = {}
 
+        # Hard stop: the page has not changed for many turns — actions are having no effect.
+        if state.stuck_count >= 8:
+            await emitter.emit_error("stuck: repeated actions had no effect on the page")
+            return {
+                "status": "failed",
+                "error_code": ErrorCode.STUCK,
+                "finished": True,
+                "reason": "Stuck — the same actions kept having no effect on the page.",
+            }
+
         # Re-entry nudge: last turn produced no tool call.
         last = messages[-1] if messages else None
         if isinstance(last, AIMessage) and not last.tool_calls:
             messages.append(HumanMessage(content="You did not call any tool. Call a tool or Complete()."))
+            nudge_delta = {"nudge_count": state.nudge_count + 1}
+
+        # Stuck nudge: the page is unchanged — the recent action(s) had no effect. Break the loop.
+        if state.stuck_count >= 2:
+            messages.append(HumanMessage(content=(
+                f"The page has NOT changed after your last {state.stuck_count} action(s) — they had no "
+                "effect. Do NOT repeat the same action. Instead: Scroll to reveal off-screen content, "
+                "WaitFor(2) if it may still be loading, or pick a DIFFERENT element. If you genuinely "
+                "cannot proceed, call Complete(success=false)."
+            )))
             nudge_delta = {"nudge_count": state.nudge_count + 1}
 
         compacted, ctx_status = compact_for_llm(messages)

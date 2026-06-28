@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.2
     llm_max_retries: int = 3
     browser_backend: str = "fake"  # "fake" | "local_cdp"
-    use_vision: bool = False
+    use_vision: bool = True
     runs_dir: str = "runs"
     cdp_headless: bool = False
     # When set (e.g. "http://localhost:9222"), attach to the user's running Chrome over CDP

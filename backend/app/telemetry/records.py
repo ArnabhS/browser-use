@@ -11,6 +11,7 @@ class ErrorCode(str, Enum):
     REASONING_MISSING = "REASONING_MISSING"
     NO_ACTION = "NO_ACTION"
     MAX_STEPS = "MAX_STEPS"
+    STUCK = "STUCK"
 
 
 class StepRecord(BaseModel):

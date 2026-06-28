@@ -31,6 +31,7 @@ class AgentState(BaseModel):
     error_code: ErrorCode | None = None
     step: int = 0
     nudge_count: int = 0
+    stuck_count: int = 0
     finished: bool = False
     success: bool | None = None
     reason: str = ""
