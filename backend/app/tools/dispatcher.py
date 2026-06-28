@@ -4,6 +4,7 @@ from typing import Any
 
 from browser_agent_contracts import ActionCall
 from langchain_core.messages import ToolMessage
+from langgraph.types import interrupt
 
 from app.agent.state import AgentState
 from app.browser.base import BrowserSession
@@ -68,6 +69,13 @@ class ToolDispatcher:
             await emitter.emit_plan(steps)
             return (
                 ToolMessage(content=f"Plan set ({len(steps)} steps)", tool_call_id=call_id, name=name),
+                {},
+            )
+
+        if name == "AskUser":
+            answer = interrupt({"question": args["question"], "context": args.get("context", "")})
+            return (
+                ToolMessage(content=f"User answered: {answer}", tool_call_id=call_id, name=name),
                 {},
             )
 

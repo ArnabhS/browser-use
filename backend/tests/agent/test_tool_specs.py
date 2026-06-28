@@ -1,4 +1,4 @@
-from app.tools.specs import TOOL_SPECS, tool_descriptions, Click, Complete
+from app.tools.specs import TOOL_SPECS, tool_descriptions, Click, Complete, AskUser
 
 
 def test_specs_have_expected_names():
@@ -6,8 +6,13 @@ def test_specs_have_expected_names():
     assert names == {
         "Navigate", "Click", "TypeText", "Scroll", "Extract", "WaitFor",
         "PressKey", "Clear", "SelectOption", "NewTab", "SwitchTab", "CloseTab",
-        "Remember", "Recall", "SetPlan", "Complete",
+        "Remember", "Recall", "SetPlan", "AskUser", "Complete",
     }
+    assert len(names) == 17
+
+
+def test_ask_user_spec():
+    assert AskUser(question="x").question == "x"
 
 
 def test_new_tool_fields():

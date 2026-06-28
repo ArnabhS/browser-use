@@ -15,6 +15,7 @@ MEMORY_UPDATE = "memory_update"
 ERROR = "error"
 FINALIZE = "finalize"
 STREAM = "stream"  # incremental LLM token
+QUESTION = "question"
 
 
 def _now_iso() -> str:

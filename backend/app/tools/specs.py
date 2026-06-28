@@ -83,6 +83,12 @@ class SetPlan(BaseModel):
     steps: list[str]
 
 
+class AskUser(BaseModel):
+    """Ask the human operator for information you cannot get yourself — login credentials, an OTP/2FA code, a CAPTCHA answer, or a clarification. The run PAUSES until they reply, then their answer is returned to you. Use sparingly, only when truly blocked."""
+    question: str
+    context: str = ""
+
+
 class Complete(BaseModel):
     """Finish the task. success=True if the goal was achieved, with a short reason."""
     success: bool
@@ -92,13 +98,13 @@ class Complete(BaseModel):
 TOOL_SPECS: list[type[BaseModel]] = [
     Navigate, Click, TypeText, Scroll, Extract, WaitFor,
     PressKey, Clear, SelectOption, NewTab, SwitchTab, CloseTab,
-    Remember, Recall, SetPlan, Complete,
+    Remember, Recall, SetPlan, AskUser, Complete,
 ]
 
 BROWSER_TOOLS = {"Navigate", "Click", "TypeText", "Scroll", "Extract", "WaitFor",
                  "PressKey", "Clear", "SelectOption", "NewTab", "SwitchTab", "CloseTab"}
 MEMORY_TOOLS = {"Remember", "Recall"}
-CONTROL_TOOLS = {"SetPlan", "Complete"}
+CONTROL_TOOLS = {"SetPlan", "Complete", "AskUser"}
 
 
 def tool_descriptions() -> str:

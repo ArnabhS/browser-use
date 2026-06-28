@@ -9,6 +9,7 @@ from app.events.protocol import (
     MEMORY_UPDATE,
     OBSERVATION,
     PLAN_UPDATE,
+    QUESTION,
     REASONING,
     STATUS,
     STREAM,
@@ -53,3 +54,6 @@ class EventEmitter:
     async def emit_stream(self, token: str) -> None:
         if token:
             await self._emit(STREAM, {"token": token})
+
+    async def emit_question(self, question: str, context: str = "") -> None:
+        await self._emit(QUESTION, {"question": question, "context": context})
