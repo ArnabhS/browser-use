@@ -116,6 +116,7 @@ class LocalCDPSession:
             cx, cy = geo
             await self.page.mouse.click(cx, cy, click_count=3)  # select all
             await self.page.keyboard.press("Delete")
+            await self._settle()
             return ActionResult(success=True, reason=f"cleared [{args['index']}]")
         if name == "select_option":
             geo = self.index_map.get(int(args["index"]))
@@ -140,8 +141,9 @@ class LocalCDPSession:
             if name == "switch_tab":
                 self._page = pages[i]
                 return ActionResult(success=True, reason=f"switched to tab {i}")
+            ctx = self.page.context
             await pages[i].close()
-            self._page = self.page.context.pages[-1] if self.page.context.pages else None
+            self._page = ctx.pages[-1] if ctx.pages else None
             return ActionResult(success=True, reason=f"closed tab {i}")
         return ActionResult(success=False, reason=f"unsupported action {name}")
 

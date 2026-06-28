@@ -51,6 +51,21 @@ async def test_select_option_sets_value_and_fires_change():
         await sess.stop()
 
 
+async def test_close_active_tab_recovers_to_survivor():
+    sess = LocalCDPSession(); await sess.start()
+    try:
+        await sess.page.set_content("<title>T0</title>")
+        await sess.act(ActionCall(name="new_tab", args={"url": "data:text/html,<title>T1</title>"}))
+        # the new tab is now active (index 1); close THAT (the active) tab
+        res = await sess.act(ActionCall(name="close_tab", args={"target_id": "1"}))
+        assert res.success
+        assert len(await sess.tabs()) == 1
+        obs = await sess.observe()   # session still usable on the surviving tab
+        assert obs is not None
+    finally:
+        await sess.stop()
+
+
 async def test_new_and_switch_and_close_tab():
     sess = LocalCDPSession(); await sess.start()
     try:

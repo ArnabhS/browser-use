@@ -31,8 +31,8 @@ EXTRACT_JS = r"""
     const inViewport = r.bottom > 0 && r.right > 0 &&
                        r.top < innerHeight && r.left < innerWidth;
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    const top = (r.width > 0 && r.height > 0) ? document.elementFromPoint(cx, cy) : null;
-    const occluded = !!(top && top !== el && !el.contains(top) && !top.contains(el));
+    const topEl = (r.width > 0 && r.height > 0) ? document.elementFromPoint(cx, cy) : null;
+    const occluded = !!(topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el));
     out.push({
       tag: el.tagName.toLowerCase(),
       role: el.getAttribute('role') || el.tagName.toLowerCase(),
