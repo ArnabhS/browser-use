@@ -15,6 +15,7 @@ def run_funnel(
     indexed = SoMIndexer().apply(visible)
     index_map = {e.index: (e.center_x, e.center_y) for e in indexed}
     elements, dropped = ReadingOrderFormatter().apply(indexed)
+    index_map = {e.index: index_map[e.index] for e in elements}
     observation = Observation(
         url=meta.url,
         title=meta.title,

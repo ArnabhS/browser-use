@@ -50,3 +50,15 @@ async def test_stale_index_fails_gracefully():
         assert not res.success and "stale" in res.reason.lower()
     finally:
         await sess.stop()
+
+
+async def test_missing_index_fails_closed_not_raises():
+    sess = LocalCDPSession()
+    await sess.start()
+    try:
+        await sess.page.set_content(_HTML)
+        await sess.observe()
+        res = await sess.act(ActionCall(name="click", args={}))  # no index key
+        assert not res.success and res.error_code == "ACTION_ERROR"
+    finally:
+        await sess.stop()

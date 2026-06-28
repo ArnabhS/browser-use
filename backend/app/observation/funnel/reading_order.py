@@ -24,7 +24,7 @@ class ReadingOrderFormatter:
             dropped = len(indexed) - len(kept)
 
         # Reading order: bucket by row (y within tolerance), then sort rows top→down, items left→right.
-        ordered = sorted(kept, key=lambda e: (round(e.y / _ROW_TOLERANCE), e.x))
+        ordered = sorted(kept, key=lambda e: (int(e.y / _ROW_TOLERANCE), e.x))
         elements = [
             Element(index=e.index, role=e.role, name=e.name, value=e.value) for e in ordered
         ]

@@ -36,7 +36,8 @@ class LocalCDPSession:
 
     @property
     def page(self) -> Page:
-        assert self._page is not None, "call start() first"
+        if self._page is None:
+            raise RuntimeError("call start() first")
         return self._page
 
     async def observe(self, *, include_som: bool = True) -> Observation:
@@ -49,6 +50,7 @@ class LocalCDPSession:
 
     async def navigate(self, url: str) -> ActionResult:
         await self.page.goto(url)
+        await self._settle()
         return ActionResult(success=True, reason=f"navigated to {url}")
 
     _ACTION_TIMEOUT = {"navigate": 30.0, "click": 10.0, "type": 10.0, "scroll": 5.0,
@@ -61,6 +63,8 @@ class LocalCDPSession:
         except asyncio.TimeoutError:
             return ActionResult(success=False, reason=f"{call.name} timed out after {timeout}s",
                                 errorCode="ACTION_TIMEOUT")
+        except Exception as e:  # Playwright errors, bad args, etc. — fail closed, never crash the run
+            return ActionResult(success=False, reason=f"{call.name} failed: {e}", errorCode="ACTION_ERROR")
 
     async def _dispatch(self, call: ActionCall) -> ActionResult:
         name, args = call.name, call.args

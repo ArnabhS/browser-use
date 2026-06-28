@@ -16,4 +16,6 @@ def build_chat_model(settings: Settings):
         stream_usage=True,
         max_retries=0,  # OpenRouterLLMClient owns retries
     )
-    return model.bind_tools(TOOL_SPECS, parallel_tool_calls=True)
+    # Browser agent: ONE action per turn — the page mutates and SoM indices are rebuilt every observe(),
+    # so batching effect actions against a single index_map would click stale coordinates.
+    return model.bind_tools(TOOL_SPECS, parallel_tool_calls=False)
