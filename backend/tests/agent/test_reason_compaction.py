@@ -12,8 +12,7 @@ async def test_old_observations_not_sent_to_llm_and_status_emitted():
         ai("scroll", [{"name": "Scroll", "args": {"direction": "down"}, "id": "t2"}]),
         ai("done", [{"name": "Complete", "args": {"success": True, "reason": "ok"}, "id": "c1"}]),
     ])
-    # Task 3 has NOT run yet — build_default_app currently returns a 4-tuple.
-    graph, emitter, store, sink = build_default_app(session=FakeBrowserSession(), llm=llm)
+    graph, emitter, store, sink, _ = build_default_app(session=FakeBrowserSession(), llm=llm)
     await run(graph, task="t", thread_id="tc")
 
     # the LLM never received more than one observation message in any single call

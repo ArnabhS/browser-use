@@ -17,7 +17,7 @@ async def test_happy_path_reaches_done_via_complete():
         ai("Logged in; finishing", [{"name": "Complete", "args": {"success": True, "reason": "done"}, "id": "b"}]),
     ])
     sess = FakeBrowserSession(observations=[_obs(), _obs()])
-    graph, emitter, store, sink = build_default_app(session=sess, llm=llm)
+    graph, emitter, store, sink, _ = build_default_app(session=sess, llm=llm)
     final = await run(graph, task="log in", thread_id="t1")
     assert final.status == "done" and final.success is True and final.reason == "done"
     assert sess.acts[0].name == "click"
@@ -37,7 +37,7 @@ async def test_remember_persists_in_state_across_turns():
 
 async def test_no_tool_call_nudges_then_fails_no_action():
     llm = FakeLLMClient(turns=[ai("hmm no action", []), ai("still nothing", [])])
-    graph, emitter, store, sink = build_default_app(session=FakeBrowserSession(), llm=llm)
+    graph, emitter, store, sink, _ = build_default_app(session=FakeBrowserSession(), llm=llm)
     final = await run(graph, task="t", thread_id="t3")
     assert final.status == "failed" and final.error_code is not None
     assert final.error_code.value == "NO_ACTION"

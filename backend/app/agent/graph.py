@@ -29,7 +29,7 @@ def _checkpointer() -> InMemorySaver:
     )
 
 
-def build_finalize_node(emitter: EventEmitter, max_steps: int):
+def build_finalize_node(emitter: EventEmitter, max_steps: int, memory=None):
     """Resolve terminal status/error in one place and emit the finalize event.
 
     A closure (not functools.partial): LangGraph may mis-detect a partial of a
@@ -48,6 +48,9 @@ def build_finalize_node(emitter: EventEmitter, max_steps: int):
         err = delta.get("error_code") or state.error_code
         reason = state.reason or (err.value if err else "")
         await emitter.emit_finalize(bool(state.success), reason)
+        final_status = delta.get("status") or state.status
+        if memory is not None:
+            memory.append_run(state.thread_id, f"{reason} ({final_status})")
         return {**delta, "history": [StepRecord(step=state.step, node="finalize",
                                                 error_code=delta.get("error_code"))]}
 
@@ -55,12 +58,12 @@ def build_finalize_node(emitter: EventEmitter, max_steps: int):
 
 
 def build_graph(*, session: BrowserSession, llm: LLMClient, emitter: EventEmitter,
-                store: TrajectoryStore, max_steps: int = 25, use_vision: bool = False):
+                store: TrajectoryStore, max_steps: int = 25, use_vision: bool = False, memory=None):
     g = StateGraph(AgentState)
     g.add_node("observe", build_observe_node(session, emitter, use_vision=use_vision))
     g.add_node("reason", build_reason_node(llm, emitter))
-    g.add_node("act", build_act_node(ToolDispatcher(), session, emitter, store))
-    g.add_node("finalize", build_finalize_node(emitter, max_steps))
+    g.add_node("act", build_act_node(ToolDispatcher(), session, emitter, store, memory))
+    g.add_node("finalize", build_finalize_node(emitter, max_steps, memory))
 
     g.add_edge(START, "observe")
     g.add_edge("observe", "reason")

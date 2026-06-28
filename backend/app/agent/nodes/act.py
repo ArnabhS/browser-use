@@ -15,6 +15,7 @@ def build_act_node(
     session: BrowserSession,
     emitter: EventEmitter,
     store: TrajectoryStore,
+    mem_store=None,
 ):
     async def act(state: AgentState) -> dict:
         last = state.messages[-1]
@@ -31,6 +32,10 @@ def build_act_node(
             merged.update(delta)
         if memory != state.agent_memory:
             merged["agent_memory"] = memory
+            if mem_store is not None:
+                for k, v in memory.items():
+                    if state.agent_memory.get(k) != v:
+                        mem_store.append(state.thread_id, k, v)
 
         record = StepRecord(
             step=state.step,

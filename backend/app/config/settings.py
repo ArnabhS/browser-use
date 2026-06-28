@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     llm_max_retries: int = 3
     browser_backend: str = "fake"  # "fake" | "local_cdp"
     use_vision: bool = False
+    runs_dir: str = "runs"
 
 
 @lru_cache
