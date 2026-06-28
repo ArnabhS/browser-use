@@ -22,6 +22,24 @@ _SELECT_JS = """
 }
 """
 
+_SCROLL_JS = """
+(dy) => {
+  const y0 = window.scrollY;
+  window.scrollBy(0, dy);
+  if (Math.abs(window.scrollY - y0) > 1) return true;
+  // The window didn't move — content lives in a scroll container. Scroll the tallest one.
+  let best = null, bestH = 0;
+  for (const el of document.querySelectorAll('*')) {
+    const s = getComputedStyle(el);
+    if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && (el.scrollHeight - el.clientHeight) > bestH) {
+      best = el; bestH = el.scrollHeight - el.clientHeight;
+    }
+  }
+  if (best) { const t0 = best.scrollTop; best.scrollTop += dy; return Math.abs(best.scrollTop - t0) > 1; }
+  return false;
+}
+"""
+
 _SOM_OVERLAY_JS = """
 (boxes) => {
   const old = document.getElementById('__som_overlay__'); if (old) old.remove();
@@ -160,10 +178,13 @@ class LocalCDPSession:
             tab = " (followed new tab)" if followed else ""
             return ActionResult(success=True, reason=f"{name} at [{args['index']}]{tab}")
         if name == "scroll":
-            dy = 600 * int(args.get("amount", 1)) * (-1 if args.get("direction") == "up" else 1)
-            await self.page.mouse.wheel(0, dy)
+            direction = args.get("direction", "down")
+            dy = 600 * int(args.get("amount", 1)) * (-1 if direction == "up" else 1)
+            moved = await self.page.evaluate(_SCROLL_JS, dy)
             await self._settle()
-            return ActionResult(success=True, reason=f"scrolled {args.get('direction', 'down')}")
+            if moved:
+                return ActionResult(success=True, reason=f"scrolled {direction}")
+            return ActionResult(success=False, reason=f"could not scroll {direction} — already at the page edge")
         if name == "wait_for":
             await asyncio.sleep(min(float(args.get("seconds", 1.0)), 10.0))
             return ActionResult(success=True, reason="waited")

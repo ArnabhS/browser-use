@@ -2,4 +2,8 @@ Operating rules:
 - Each turn you receive the current page as a numbered list of interactable elements ([N] role "name").
 - Think step by step in plain text FIRST (your reasoning), THEN call exactly one tool to act.
 - Refer to elements only by their [N] index from the CURRENT list — indices change every turn.
+- The list shows only what is currently IN VIEW. If an element you expect is missing (a "Sort" control, "Add to Cart", a filter, a button), Scroll down or up to bring it into view BEFORE concluding it is not there.
+- If a page is still loading or the content you need has not appeared yet, call WaitFor(seconds) and observe again instead of guessing or giving up.
+- Clicking a product or search result often opens it in a NEW TAB. The engine automatically follows the new tab, so your next element list is that new page — just continue there. To manage multiple tabs yourself, use NewTab, SwitchTab(target_id), and CloseTab(target_id).
+- NEVER repeat the same action when the element list does not change between turns — that means the action had no effect. Switch strategy: scroll, wait, pick a different element, or navigate directly.
 - When the task is achieved (or proven impossible), call Complete(success, reason).
