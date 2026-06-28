@@ -22,12 +22,33 @@ _SELECT_JS = """
 }
 """
 
+_SOM_OVERLAY_JS = """
+(boxes) => {
+  const old = document.getElementById('__som_overlay__'); if (old) old.remove();
+  const c = document.createElement('div');
+  c.id = '__som_overlay__';
+  c.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483647';
+  const colors = ['#E6194B','#3CB44B','#4363D8','#F58231','#911EB4','#008080','#F032E6','#BFEF45'];
+  for (const b of boxes) {
+    const idx=b[0], x=b[1], y=b[2], w=b[3], h=b[4], col=colors[idx % colors.length];
+    const box = document.createElement('div');
+    box.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:${w}px;height:${h}px;border:2px solid ${col};box-sizing:border-box`;
+    const lab = document.createElement('div');
+    lab.textContent = idx;
+    lab.style.cssText = `position:absolute;left:${x}px;top:${Math.max(0,y-14)}px;background:${col};color:#fff;font:bold 11px monospace;padding:0 3px;line-height:14px`;
+    c.appendChild(box); c.appendChild(lab);
+  }
+  document.body.appendChild(c);
+}
+"""
+
 
 class LocalCDPSession:
     """BrowserSession over a local headless Chromium (Playwright). Real eyes + trusted hands."""
 
-    def __init__(self, *, headless: bool = True) -> None:
+    def __init__(self, *, headless: bool = True, draw_som_overlay: bool = False) -> None:
         self._headless = headless
+        self._draw_overlay = draw_som_overlay
         self._pw = None
         self._browser: Browser | None = None
         self._page: Page | None = None
@@ -56,10 +77,15 @@ class LocalCDPSession:
 
     async def observe(self, *, include_som: bool = True) -> Observation:
         raw, meta = await extract(self.page)
-        self.latest_screenshot = await self.page.screenshot()
         self._shot_counter += 1
         ref = f"shot-{self._shot_counter}"
         observation, self.index_map, self.index_boxes = run_funnel(raw, meta, screenshot_ref=ref)
+        if self._draw_overlay and self.index_boxes:
+            await self.page.evaluate(_SOM_OVERLAY_JS, [[i, *b] for i, b in self.index_boxes.items()])
+            self.latest_screenshot = await self.page.screenshot()
+            await self.page.evaluate("() => { const o = document.getElementById('__som_overlay__'); if (o) o.remove(); }")
+        else:
+            self.latest_screenshot = await self.page.screenshot()
         return observation
 
     async def navigate(self, url: str) -> ActionResult:
