@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from langchain_core.messages import AIMessageChunk, HumanMessage
 from app.llm.base import LLMClient
@@ -42,7 +44,10 @@ async def test_complete_streams_tokens_and_returns_message():
     assert [e.data["token"] for e in sink.events if e.event == STREAM] == ["I will ", "click Login"]
 
 
-async def test_complete_retries_transient_then_succeeds():
+async def test_complete_retries_transient_then_succeeds(monkeypatch):
+    async def _no_sleep(_): pass
+    import app.llm.openrouter as orm
+    monkeypatch.setattr(orm.asyncio, "sleep", _no_sleep)
     err = RuntimeError("boom"); err.status_code = 503
     model = _StubModel(_chunks_for_click(), fail_times=1, exc=err)
     client = OpenRouterLLMClient(model, EventEmitter(BufferSink()), UsageTracker(), max_retries=2, model_name="m")
@@ -62,3 +67,17 @@ def test_is_transient_classifier():
     e1 = RuntimeError(); e1.status_code = 429
     e2 = RuntimeError(); e2.status_code = 400
     assert _is_transient(e1) and not _is_transient(e2)
+
+
+def test_is_transient_includes_network_errors():
+    assert _is_transient(asyncio.TimeoutError())
+
+
+async def test_retries_statusless_network_error(monkeypatch):
+    async def _no_sleep(_): pass
+    import app.llm.openrouter as orm
+    monkeypatch.setattr(orm.asyncio, "sleep", _no_sleep)
+    model = _StubModel(_chunks_for_click(), fail_times=1, exc=asyncio.TimeoutError())
+    client = OpenRouterLLMClient(model, EventEmitter(BufferSink()), UsageTracker(), max_retries=2, model_name="m")
+    msg = await client.complete(messages=[HumanMessage(content="hi")], tools=[])
+    assert msg.tool_calls[0]["name"] == "Click" and model.calls == 2

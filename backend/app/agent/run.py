@@ -5,7 +5,7 @@ import asyncio
 from app.agent.demo import run
 from app.agent.state import AgentState
 from app.config.container import build_default_app
-from tests.fakes.fake_browser import FakeBrowserSession
+from tests.fakes.fake_browser import FakeBrowserSession  # B2-only: replaced by the real LocalCDPSession browser in B3
 
 
 async def run_task(task: str, *, thread_id: str = "live") -> AgentState:

@@ -13,6 +13,24 @@ from app.llm.usage import UsageTracker
 _TRANSIENT_STATUS = {429, 500, 502, 503, 504}
 
 
+def _network_exc_types() -> tuple:
+    types: tuple = (asyncio.TimeoutError,)
+    try:
+        import httpx
+        types += (httpx.TransportError,)
+    except Exception:
+        pass
+    try:
+        from openai import APIConnectionError, APITimeoutError
+        types += (APIConnectionError, APITimeoutError)
+    except Exception:
+        pass
+    return types
+
+
+_NETWORK_EXC = _network_exc_types()
+
+
 def _status_of(exc: Exception) -> int | None:
     for attr in ("status_code", "http_status", "code"):
         v = getattr(exc, attr, None)
@@ -23,6 +41,8 @@ def _status_of(exc: Exception) -> int | None:
 
 
 def _is_transient(exc: Exception) -> bool:
+    if isinstance(exc, _NETWORK_EXC):
+        return True
     return _status_of(exc) in _TRANSIENT_STATUS
 
 
@@ -55,7 +75,7 @@ class OpenRouterLLMClient:
         self._model_name = model_name
 
     async def complete(self, *, messages: list[BaseMessage],
-                       tools: Sequence[type[BaseModel]] | None = None) -> AIMessage:
+                       tools: Sequence[type[BaseModel]] = ()) -> AIMessage:
         attempt = 0
         while True:
             try:

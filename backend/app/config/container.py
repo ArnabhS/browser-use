@@ -14,13 +14,13 @@ def build_default_app(*, session, llm=None, sink: EventSink | None = None):
     sink = sink or BufferSink()
     emitter = EventEmitter(sink)
     store = InMemoryTrajectoryStore()
-    usage = UsageTracker()
 
     if llm is None:
         if not settings.openrouter_api_key:
             raise ValueError("No OPENROUTER_API_KEY set and no llm injected — cannot build the agent.")
         from app.llm.factory import build_chat_model
         from app.llm.openrouter import OpenRouterLLMClient
+        usage = UsageTracker()
         llm = OpenRouterLLMClient(
             build_chat_model(settings), emitter, usage,
             max_retries=settings.llm_max_retries, model_name=settings.agent_model,
