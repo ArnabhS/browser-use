@@ -39,7 +39,13 @@ async def build_running_app(sink):
     await session.start()
     graph, emitter, store, _sink, memory = build_default_app(session=session, sink=sink)
 
+    stopped = False
+
     async def cleanup() -> None:
+        nonlocal stopped
+        if stopped:
+            return
+        stopped = True
         await session.stop()
 
     return graph, emitter, memory, cleanup
