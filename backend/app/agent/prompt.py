@@ -3,21 +3,24 @@ from __future__ import annotations
 from langchain_core.messages import SystemMessage
 
 from app.agent.state import AgentState
+from app.prompt.loader import PromptLoader, default_loader
+from app.prompt.resolver import PromptResolver
 from app.tools.specs import tool_descriptions
 
-SYSTEM_PROMPT = """You are a web browser agent. Each turn you receive the current page as a \
-numbered list of interactable elements. Think step by step in plain text FIRST, then call exactly \
-one tool to act. Refer to elements by their [N] index. When the task is achieved (or impossible), \
-call Complete(success, reason).
-
-Available tools:
-{tools}
-
-Working memory:
-{memory}
-"""
+_SYSTEM_TEMPLATE = "agent/system.jinja2"
 
 
-def build_system_message(state: AgentState) -> SystemMessage:
+def build_system_message(
+    state: AgentState,
+    *,
+    loader: PromptLoader | None = None,
+    resolver: PromptResolver | None = None,
+) -> SystemMessage:
+    loader = loader or default_loader()
     memory = "\n".join(f"- {k}: {v}" for k, v in state.agent_memory.items()) or "(empty)"
-    return SystemMessage(content=SYSTEM_PROMPT.format(tools=tool_descriptions(), memory=memory))
+    ctx = {"tool_descriptions": tool_descriptions(), "memory": memory, "task": state.task}
+    if resolver is not None:
+        text = resolver.render("agent_system", ctx, loader, fallback=_SYSTEM_TEMPLATE)
+    else:
+        text = loader.render(_SYSTEM_TEMPLATE, ctx)
+    return SystemMessage(content=text)

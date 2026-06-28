@@ -14,6 +14,7 @@ PLAN_UPDATE = "plan_update"
 MEMORY_UPDATE = "memory_update"
 ERROR = "error"
 FINALIZE = "finalize"
+STREAM = "stream"  # incremental LLM token
 
 
 def _now_iso() -> str:
