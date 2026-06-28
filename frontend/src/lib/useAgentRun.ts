@@ -73,7 +73,10 @@ export function useAgentRun(): AgentRunState {
       };
 
       ws.onerror = () => {
-        setError("WebSocket connection error");
+        setError(
+          `Can't reach the backend at ${WS_URL}. Is it running? ` +
+            `Start it with:  cd backend && uv run uvicorn app.api.main:app --port 8000`
+        );
         setStatus("error");
         closeSocket();
       };
