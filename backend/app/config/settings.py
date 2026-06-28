@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.2
     llm_max_retries: int = 3
     browser_backend: str = "fake"  # "fake" | "local_cdp"
+    use_vision: bool = False
 
 
 @lru_cache

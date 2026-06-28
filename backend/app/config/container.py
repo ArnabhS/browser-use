@@ -32,5 +32,6 @@ def build_default_app(*, session=None, llm=None, sink: EventSink | None = None):
             max_retries=settings.llm_max_retries, model_name=settings.agent_model,
         )
 
-    graph = build_graph(session=session, llm=llm, emitter=emitter, store=store, max_steps=settings.max_steps)
+    graph = build_graph(session=session, llm=llm, emitter=emitter, store=store,
+                        max_steps=settings.max_steps, use_vision=settings.use_vision)
     return graph, emitter, store, sink
