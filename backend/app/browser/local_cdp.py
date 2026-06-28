@@ -83,6 +83,7 @@ class LocalCDPSession:
         self.index_boxes: dict[int, tuple[float, float, float, float]] = {}
         self.latest_screenshot: bytes | None = None
         self._shot_counter = 0
+        self._seen_pages: set = set()  # tabs we've accounted for (for lazy new-tab follow)
 
     async def start(self) -> None:
         self._pw = await async_playwright().start()
@@ -127,7 +128,19 @@ class LocalCDPSession:
             raise RuntimeError("call start() first")
         return self._page
 
+    def _follow_unseen_tab(self) -> None:
+        """Lazy safety net: if a tab opened since we last looked (e.g. a click's new tab that
+        registered after the action's wait window), follow the newest one before observing."""
+        if self._page is None:
+            return
+        pages = [p for p in self._page.context.pages if not p.is_closed()]
+        unseen = [p for p in pages if p not in self._seen_pages]
+        self._seen_pages = set(pages)
+        if unseen and unseen[-1] is not self._page:
+            self._page = unseen[-1]
+
     async def observe(self, *, include_som: bool = True) -> Observation:
+        self._follow_unseen_tab()
         raw, meta = await extract(self.page)
         self._shot_counter += 1
         ref = f"shot-{self._shot_counter}"
