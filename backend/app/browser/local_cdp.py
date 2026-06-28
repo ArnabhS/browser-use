@@ -32,6 +32,7 @@ class LocalCDPSession:
         self._browser: Browser | None = None
         self._page: Page | None = None
         self.index_map: dict[int, tuple[float, float]] = {}
+        self.index_boxes: dict[int, tuple[float, float, float, float]] = {}
         self.latest_screenshot: bytes | None = None
         self._shot_counter = 0
 
@@ -58,7 +59,7 @@ class LocalCDPSession:
         self.latest_screenshot = await self.page.screenshot()
         self._shot_counter += 1
         ref = f"shot-{self._shot_counter}"
-        observation, self.index_map = run_funnel(raw, meta, screenshot_ref=ref)
+        observation, self.index_map, self.index_boxes = run_funnel(raw, meta, screenshot_ref=ref)
         return observation
 
     async def navigate(self, url: str) -> ActionResult:
