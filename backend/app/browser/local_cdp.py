@@ -70,8 +70,19 @@ class LocalCDPSession:
         self._pw = await async_playwright().start()
         if self._connect_url:
             # Attach to the user's running Chrome (started with --remote-debugging-port=PORT).
-            # Reuse their existing context (cookies/logins) and open a fresh tab there.
-            self._browser = await self._pw.chromium.connect_over_cdp(self._connect_url)
+            # Chrome's debug port binds IPv4 (127.0.0.1); "localhost" can resolve to IPv6 (::1)
+            # and be refused, so force IPv4. Reuse their context (logins), open a fresh tab.
+            url = self._connect_url.replace("://localhost", "://127.0.0.1")
+            try:
+                self._browser = await self._pw.chromium.connect_over_cdp(url)
+            except Exception as exc:
+                await self._pw.stop()
+                self._pw = None
+                raise RuntimeError(
+                    f"Could not attach to Chrome at {url}. Start Chrome with "
+                    '--remote-debugging-port=9222 --user-data-dir="$HOME/chrome-agent" and keep it '
+                    f"open (verify: curl {url}/json/version). [{type(exc).__name__}: {exc}]"
+                ) from exc
             ctx = self._browser.contexts[0] if self._browser.contexts else await self._browser.new_context()
             self._page = await ctx.new_page()
         else:

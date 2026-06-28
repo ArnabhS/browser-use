@@ -76,7 +76,14 @@ async def ws_run(websocket: WebSocket) -> None:
             elif mtype == "start" and (run_task is None or run_task.done()):
                 task_text = msg.get("task", "")
                 thread_id = msg.get("thread_id") or f"ws-{uuid.uuid4().hex[:8]}"
-                graph, emitter, memory, cleanup = await build_running_app(WebSocketSink(websocket))
+                try:
+                    graph, emitter, memory, cleanup = await build_running_app(WebSocketSink(websocket))
+                except Exception as exc:  # browser failed to start — tell the cockpit, don't crash
+                    await websocket.send_json(
+                        {"event": "error", "data": {"message": f"Could not start the browser: {exc}"}, "ts": _now()}
+                    )
+                    await websocket.send_json({"event": "run_complete", "data": {}, "ts": _now()})
+                    continue
 
                 async def _do_run(
                     graph=graph,
