@@ -70,3 +70,14 @@ async def test_remember_preserves_existing_keys():
         state=state, session=_RecordingSession(), emitter=EventEmitter(BufferSink()),
     )
     assert delta["agent_memory"] == {"first": "1", "second": "2"}
+
+
+async def test_press_key_builds_actioncall():
+    from app.tools.dispatcher import ToolDispatcher
+    d = ToolDispatcher()
+    msg, delta = await d.dispatch(
+        {"name": "PressKey", "args": {"key": "Enter"}, "id": "k1"},
+        state=_state(), session=_RecordingSession(), emitter=EventEmitter(BufferSink()),
+    )
+    # the dispatcher routes PressKey -> ActionCall(name="press_key", ...)
+    assert delta["last_action"].name == "press_key" and delta["last_action"].args == {"key": "Enter"}

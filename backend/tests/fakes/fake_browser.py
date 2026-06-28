@@ -11,10 +11,12 @@ class FakeBrowserSession:
     """Scripted BrowserSession for graph tests. Records every act()."""
 
     def __init__(self, observations: list[Observation] | None = None,
-                 results: list[ActionResult] | None = None) -> None:
+                 results: list[ActionResult] | None = None, *,
+                 latest_screenshot: bytes | None = None) -> None:
         self._obs = list(observations or [])
         self._results = list(results or [])
         self.acts: list[ActionCall] = []
+        self.latest_screenshot: bytes | None = latest_screenshot
 
     async def observe(self, *, include_som: bool = True) -> Observation:
         return self._obs.pop(0) if self._obs else _blank()

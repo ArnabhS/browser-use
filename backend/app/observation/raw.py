@@ -14,6 +14,7 @@ class RawElement(BaseModel):
     height: float
     visible: bool = True
     in_viewport: bool = True
+    occluded: bool = False
 
 
 class PageMeta(BaseModel):

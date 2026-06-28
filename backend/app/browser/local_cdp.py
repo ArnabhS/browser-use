@@ -9,16 +9,51 @@ from app.observation.extract import extract
 from app.observation.funnel.pipeline import run_funnel
 from app.telemetry.records import TabInfo
 
+_SELECT_JS = """
+([cx, cy, value]) => {
+  const el = document.elementFromPoint(cx, cy);
+  const sel = el && (el.tagName === 'SELECT' ? el : el.closest('select'));
+  if (!sel) return false;
+  let opt = [...sel.options].find(o => o.value === value || o.text === value);
+  if (!opt) return false;
+  sel.value = opt.value;
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
+}
+"""
+
+_SOM_OVERLAY_JS = """
+(boxes) => {
+  const old = document.getElementById('__som_overlay__'); if (old) old.remove();
+  const c = document.createElement('div');
+  c.id = '__som_overlay__';
+  c.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483647';
+  const colors = ['#E6194B','#3CB44B','#4363D8','#F58231','#911EB4','#008080','#F032E6','#BFEF45'];
+  for (const b of boxes) {
+    const idx=b[0], x=b[1], y=b[2], w=b[3], h=b[4], col=colors[idx % colors.length];
+    const box = document.createElement('div');
+    box.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:${w}px;height:${h}px;border:2px solid ${col};box-sizing:border-box`;
+    const lab = document.createElement('div');
+    lab.textContent = idx;
+    lab.style.cssText = `position:absolute;left:${x}px;top:${Math.max(0,y-14)}px;background:${col};color:#fff;font:bold 11px monospace;padding:0 3px;line-height:14px`;
+    c.appendChild(box); c.appendChild(lab);
+  }
+  document.body.appendChild(c);
+}
+"""
+
 
 class LocalCDPSession:
     """BrowserSession over a local headless Chromium (Playwright). Real eyes + trusted hands."""
 
-    def __init__(self, *, headless: bool = True) -> None:
+    def __init__(self, *, headless: bool = True, draw_som_overlay: bool = False) -> None:
         self._headless = headless
+        self._draw_overlay = draw_som_overlay
         self._pw = None
         self._browser: Browser | None = None
         self._page: Page | None = None
         self.index_map: dict[int, tuple[float, float]] = {}
+        self.index_boxes: dict[int, tuple[float, float, float, float]] = {}
         self.latest_screenshot: bytes | None = None
         self._shot_counter = 0
 
@@ -42,10 +77,15 @@ class LocalCDPSession:
 
     async def observe(self, *, include_som: bool = True) -> Observation:
         raw, meta = await extract(self.page)
-        self.latest_screenshot = await self.page.screenshot()
         self._shot_counter += 1
         ref = f"shot-{self._shot_counter}"
-        observation, self.index_map = run_funnel(raw, meta, screenshot_ref=ref)
+        observation, self.index_map, self.index_boxes = run_funnel(raw, meta, screenshot_ref=ref)
+        if self._draw_overlay and self.index_boxes:
+            await self.page.evaluate(_SOM_OVERLAY_JS, [[i, *b] for i, b in self.index_boxes.items()])
+            self.latest_screenshot = await self.page.screenshot()
+            await self.page.evaluate("() => { const o = document.getElementById('__som_overlay__'); if (o) o.remove(); }")
+        else:
+            self.latest_screenshot = await self.page.screenshot()
         return observation
 
     async def navigate(self, url: str) -> ActionResult:
@@ -54,7 +94,8 @@ class LocalCDPSession:
         return ActionResult(success=True, reason=f"navigated to {url}")
 
     _ACTION_TIMEOUT = {"navigate": 30.0, "click": 10.0, "type": 10.0, "scroll": 5.0,
-                       "wait_for": 30.0, "extract": 15.0}
+                       "wait_for": 30.0, "extract": 15.0, "press_key": 5.0, "clear": 10.0,
+                       "select_option": 10.0, "new_tab": 30.0, "switch_tab": 5.0, "close_tab": 5.0}
 
     async def act(self, call: ActionCall) -> ActionResult:
         timeout = self._ACTION_TIMEOUT.get(call.name, 10.0)
@@ -91,6 +132,46 @@ class LocalCDPSession:
         if name == "extract":
             text = (await self.page.inner_text("body"))[:4000]
             return ActionResult(success=True, reason=text)
+        if name == "press_key":
+            await self.page.keyboard.press(str(args["key"]))
+            await self._settle()
+            return ActionResult(success=True, reason=f"pressed {args['key']}")
+        if name == "clear":
+            geo = self.index_map.get(int(args["index"]))
+            if geo is None:
+                return ActionResult(success=False, reason=f"stale index {args.get('index')}")
+            cx, cy = geo
+            await self.page.mouse.click(cx, cy, click_count=3)  # select all
+            await self.page.keyboard.press("Delete")
+            await self._settle()
+            return ActionResult(success=True, reason=f"cleared [{args['index']}]")
+        if name == "select_option":
+            geo = self.index_map.get(int(args["index"]))
+            if geo is None:
+                return ActionResult(success=False, reason=f"stale index {args.get('index')}")
+            cx, cy = geo
+            ok = await self.page.evaluate(_SELECT_JS, [cx, cy, str(args["value"])])
+            await self._settle()
+            return ActionResult(success=bool(ok),
+                                reason=f"selected {args['value']}" if ok else "option/select not found")
+        if name == "new_tab":
+            page = await self.page.context.new_page()
+            await page.goto(args["url"])
+            self._page = page
+            await self._settle()
+            return ActionResult(success=True, reason=f"opened {args['url']}")
+        if name in {"switch_tab", "close_tab"}:
+            pages = self.page.context.pages
+            i = int(args["target_id"])
+            if not (0 <= i < len(pages)):
+                return ActionResult(success=False, reason=f"no tab {args['target_id']}")
+            if name == "switch_tab":
+                self._page = pages[i]
+                return ActionResult(success=True, reason=f"switched to tab {i}")
+            ctx = self.page.context
+            await pages[i].close()
+            self._page = ctx.pages[-1] if ctx.pages else None
+            return ActionResult(success=True, reason=f"closed tab {i}")
         return ActionResult(success=False, reason=f"unsupported action {name}")
 
     async def _settle(self, bound: float = 3.0) -> None:

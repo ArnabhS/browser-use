@@ -30,13 +30,16 @@ EXTRACT_JS = r"""
                     parseFloat(s.opacity || '1') > 0 && r.width > 0 && r.height > 0;
     const inViewport = r.bottom > 0 && r.right > 0 &&
                        r.top < innerHeight && r.left < innerWidth;
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const topEl = (r.width > 0 && r.height > 0) ? document.elementFromPoint(cx, cy) : null;
+    const occluded = !!(topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el));
     out.push({
       tag: el.tagName.toLowerCase(),
       role: el.getAttribute('role') || el.tagName.toLowerCase(),
       name: name(el),
       value: (el.value || '').slice(0, 200) || null,
       x: r.left, y: r.top, width: r.width, height: r.height,
-      visible, in_viewport: inViewport,
+      visible, in_viewport: inViewport, occluded,
     });
   }
   return {

@@ -14,7 +14,7 @@ def build_default_app(*, session=None, llm=None, sink: EventSink | None = None):
     if session is None:
         if settings.browser_backend == "local_cdp":
             from app.browser.local_cdp import LocalCDPSession
-            session = LocalCDPSession()  # caller must `await session.start()` before running
+            session = LocalCDPSession(draw_som_overlay=settings.use_vision)  # caller must `await session.start()` before running
         else:
             raise ValueError("No session provided and browser_backend is not 'local_cdp'.")
     sink = sink or BufferSink()
@@ -32,5 +32,6 @@ def build_default_app(*, session=None, llm=None, sink: EventSink | None = None):
             max_retries=settings.llm_max_retries, model_name=settings.agent_model,
         )
 
-    graph = build_graph(session=session, llm=llm, emitter=emitter, store=store, max_steps=settings.max_steps)
+    graph = build_graph(session=session, llm=llm, emitter=emitter, store=store,
+                        max_steps=settings.max_steps, use_vision=settings.use_vision)
     return graph, emitter, store, sink
