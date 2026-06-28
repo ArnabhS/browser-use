@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     browser_backend: str = "fake"  # "fake" | "local_cdp"
     use_vision: bool = False
     runs_dir: str = "runs"
+    cdp_headless: bool = False
 
 
 @lru_cache
