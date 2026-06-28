@@ -2,22 +2,58 @@ from __future__ import annotations
 
 import asyncio
 
+from langgraph.types import Command
+
 from app.agent.state import AgentState
 
 
-async def run(graph, task: str, thread_id: str = "demo") -> AgentState:
-    """Astream the graph to completion; return the final AgentState.
+async def run(
+    graph,
+    task: str,
+    thread_id: str = "demo",
+    *,
+    answer_provider=None,
+    emitter=None,
+) -> AgentState:
+    """Astream the graph to completion, pausing on AskUser interrupts.
 
-    Input is a plain dict (the documented LangGraph input form) — the graph fills
-    the AgentState defaults. `aget_state(config).values` is a dict we re-validate.
+    On each LangGraph `interrupt`, emit a QUESTION event (if an emitter is given),
+    ask `answer_provider(question_dict) -> str` for the answer, and resume with it.
+    Without a provider, a safe default answer is supplied so the run still finishes.
+
+    Interrupt detection (LangGraph 1.0.9, stream_mode="updates"):
+      Chunks are plain dicts; an interrupt chunk looks like
+        {"__interrupt__": (Interrupt(value=..., id=...), ...)}
+      We check `"__interrupt__" in chunk` and read `.value` from the first object.
+      Fallback: `(await graph.aget_state(config)).interrupts` (same Interrupt objects).
     """
     config = {"configurable": {"thread_id": thread_id}}
-    async for _ in graph.astream(
-        {"task": task, "thread_id": thread_id}, config=config, stream_mode="updates"
-    ):
-        pass
+    stream_input: object = {"task": task, "thread_id": thread_id}
+    while True:
+        interrupt_value = None
+        async for chunk in graph.astream(stream_input, config=config, stream_mode="updates"):
+            if isinstance(chunk, dict) and "__interrupt__" in chunk:
+                interrupt_value = chunk["__interrupt__"][0].value
+        if interrupt_value is None:
+            break
+        q = interrupt_value if isinstance(interrupt_value, dict) else {"question": str(interrupt_value)}
+        if emitter is not None:
+            await emitter.emit_question(q.get("question", ""), q.get("context", ""))
+        if answer_provider is not None:
+            answer = await answer_provider(q)
+        else:
+            answer = "No answer available; proceed with your best judgment."
+        stream_input = Command(resume=answer)
     snapshot = await graph.aget_state(config)
     return AgentState.model_validate(snapshot.values)
+
+
+async def console_answer_provider(question: dict) -> str:
+    """Print the agent's question and read one line from stdin (for live CLI runs)."""
+    import asyncio as _asyncio
+    ctx = question.get("context", "")
+    print(f"\n❓ AGENT ASKS: {question.get('question', '')}" + (f"  ({ctx})" if ctx else ""))
+    return (await _asyncio.get_event_loop().run_in_executor(None, input, "   your answer > ")).strip()
 
 
 async def _demo() -> None:
