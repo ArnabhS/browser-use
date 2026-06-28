@@ -30,6 +30,7 @@ asyncio_mode = "auto"
 filterwarnings = [
   "ignore:Using `httpx` with `starlette.testclient` is deprecated:UserWarning",
 ]
+markers = ["browser: integration tests that launch headless Chromium (slow)"]
 
 [build-system]
 requires = ["hatchling"]
