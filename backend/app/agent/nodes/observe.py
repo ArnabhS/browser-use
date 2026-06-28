@@ -27,7 +27,7 @@ def build_observe_node(session: BrowserSession, emitter: EventEmitter, *, use_vi
             content = text
         return {
             "observation": obs,
-            "messages": [HumanMessage(content=content)],
+            "messages": [HumanMessage(content=content, name="observation")],
             "history": [StepRecord(step=state.step, node="observe")],
         }
 

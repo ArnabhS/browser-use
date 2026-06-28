@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from langchain_core.messages import AIMessage, HumanMessage
 
+from app.agent.compaction import compact_for_llm
 from app.agent.prompt import build_system_message
 from app.agent.state import AgentState
 from app.events.emitter import EventEmitter
@@ -41,12 +42,17 @@ def build_reason_node(llm: LLMClient, emitter: EventEmitter):
             messages.append(HumanMessage(content="You did not call any tool. Call a tool or Complete()."))
             nudge_delta = {"nudge_count": state.nudge_count + 1}
 
+        compacted, ctx_status = compact_for_llm(messages)
         system = build_system_message(state)
-        ai = await llm.complete(messages=[system, *messages], tools=TOOL_SPECS)
+        ai = await llm.complete(messages=[system, *compacted], tools=TOOL_SPECS)
+
+        in_tok, out_tok = _usage(ai)
+        ctx_status["input_tokens"] = in_tok
+        await emitter.emit_context_status(ctx_status)
 
         # Think-before-act enforcement: retry once if a tool call lacks reasoning.
         if ai.tool_calls and not _has_reasoning(ai):
-            retry_msgs = [system, *messages, ai, HumanMessage(content=_REMINDER)]
+            retry_msgs = [system, *compacted, ai, HumanMessage(content=_REMINDER)]
             ai = await llm.complete(messages=retry_msgs, tools=TOOL_SPECS)
             if ai.tool_calls and not _has_reasoning(ai):
                 await emitter.emit_error("Reasoning missing after retry")

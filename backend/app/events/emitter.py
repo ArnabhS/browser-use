@@ -4,6 +4,7 @@ from typing import Any
 
 from app.events.protocol import (
     AgentEvent,
+    CONTEXT_STATUS,
     ERROR,
     FINALIZE,
     MEMORY_UPDATE,
@@ -57,3 +58,6 @@ class EventEmitter:
 
     async def emit_question(self, question: str, context: str = "") -> None:
         await self._emit(QUESTION, {"question": question, "context": context})
+
+    async def emit_context_status(self, status: dict) -> None:
+        await self._emit(CONTEXT_STATUS, status)

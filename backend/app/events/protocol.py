@@ -16,6 +16,7 @@ ERROR = "error"
 FINALIZE = "finalize"
 STREAM = "stream"  # incremental LLM token
 QUESTION = "question"
+CONTEXT_STATUS = "context_status"
 
 
 def _now_iso() -> str:
