@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     max_steps: int = 25
     llm_temperature: float = 0.2
     llm_max_retries: int = 3
+    browser_backend: str = "fake"  # "fake" | "local_cdp"
 
 
 @lru_cache
