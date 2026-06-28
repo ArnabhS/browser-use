@@ -14,8 +14,8 @@ class FakeLLMClient:
 
     def __init__(self, turns: list[AIMessage]) -> None:
         self._turns = list(turns)
-        self.calls = 0
+        self.calls: list[list[BaseMessage]] = []
 
     async def complete(self, *, messages: list[BaseMessage], tools: Sequence[type[BaseModel]]) -> AIMessage:
-        self.calls += 1
+        self.calls.append(messages)
         return self._turns.pop(0)

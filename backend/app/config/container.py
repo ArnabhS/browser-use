@@ -8,7 +8,7 @@ from app.llm.usage import UsageTracker
 from app.telemetry.store import InMemoryTrajectoryStore
 
 
-def build_default_app(*, session=None, llm=None, sink: EventSink | None = None):
+def build_default_app(*, session=None, llm=None, sink: EventSink | None = None, memory=None):
     """Composition root: real OpenRouter LLM when a key is set (and no llm injected), else the injected llm."""
     settings = get_settings()
     if session is None:
@@ -32,6 +32,11 @@ def build_default_app(*, session=None, llm=None, sink: EventSink | None = None):
             max_retries=settings.llm_max_retries, model_name=settings.agent_model,
         )
 
+    if memory is None:
+        from app.memory.store import AsyncMarkdownMemory
+        memory = AsyncMarkdownMemory(base_dir=settings.runs_dir)
+
     graph = build_graph(session=session, llm=llm, emitter=emitter, store=store,
-                        max_steps=settings.max_steps, use_vision=settings.use_vision)
-    return graph, emitter, store, sink
+                        max_steps=settings.max_steps, use_vision=settings.use_vision,
+                        memory=memory)
+    return graph, emitter, store, sink, memory

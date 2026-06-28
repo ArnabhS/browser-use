@@ -16,7 +16,7 @@ async def test_ask_user_pauses_gets_answer_and_resumes():
             {"name": "Complete", "args": {"success": True, "reason": "used the OTP"}, "id": "c1"},
         ]),
     ])
-    graph, emitter, store, sink = build_default_app(session=FakeBrowserSession(), llm=llm)
+    graph, emitter, store, sink, _ = build_default_app(session=FakeBrowserSession(), llm=llm)
 
     asked: list[dict] = []
 
@@ -39,6 +39,6 @@ async def test_run_without_provider_still_finishes():
         ai("asking", [{"name": "AskUser", "args": {"question": "x?"}, "id": "q1"}]),
         ai("done", [{"name": "Complete", "args": {"success": True, "reason": "ok"}, "id": "c1"}]),
     ])
-    graph, emitter, store, sink = build_default_app(session=FakeBrowserSession(), llm=llm)
+    graph, emitter, store, sink, _ = build_default_app(session=FakeBrowserSession(), llm=llm)
     final = await run(graph, task="t", thread_id="t-noprov")  # no provider
     assert final.status == "done"  # default answer supplied, run completes

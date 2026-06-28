@@ -10,8 +10,8 @@ from tests.fakes.fake_browser import FakeBrowserSession  # B2-only: replaced by 
 
 async def run_task(task: str, *, thread_id: str = "live") -> AgentState:
     """Run the agent with the REAL OpenRouter LLM against a fake browser (B2)."""
-    graph, emitter, store, sink = build_default_app(session=FakeBrowserSession())
-    return await run(graph, task=task, thread_id=thread_id)
+    graph, emitter, store, sink, memory = build_default_app(session=FakeBrowserSession())
+    return await run(graph, task=task, thread_id=thread_id, memory=memory)
 
 
 async def _main() -> None:

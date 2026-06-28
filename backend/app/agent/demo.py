@@ -14,12 +14,16 @@ async def run(
     *,
     answer_provider=None,
     emitter=None,
+    memory=None,
 ) -> AgentState:
     """Astream the graph to completion, pausing on AskUser interrupts.
 
     On each LangGraph `interrupt`, emit a QUESTION event (if an emitter is given),
     ask `answer_provider(question_dict) -> str` for the answer, and resume with it.
     Without a provider, a safe default answer is supplied so the run still finishes.
+
+    If `memory` is provided, preloads `agent_memory` from the store before streaming
+    and manages start/stop lifecycle around the run.
 
     Interrupt detection (LangGraph 1.0.9, stream_mode="updates"):
       Chunks are plain dicts; an interrupt chunk looks like
@@ -28,22 +32,29 @@ async def run(
       Fallback: `(await graph.aget_state(config)).interrupts` (same Interrupt objects).
     """
     config = {"configurable": {"thread_id": thread_id}}
-    stream_input: object = {"task": task, "thread_id": thread_id}
-    while True:
-        interrupt_value = None
-        async for chunk in graph.astream(stream_input, config=config, stream_mode="updates"):
-            if isinstance(chunk, dict) and "__interrupt__" in chunk:
-                interrupt_value = chunk["__interrupt__"][0].value
-        if interrupt_value is None:
-            break
-        q = interrupt_value if isinstance(interrupt_value, dict) else {"question": str(interrupt_value)}
-        if emitter is not None:
-            await emitter.emit_question(q.get("question", ""), q.get("context", ""))
-        if answer_provider is not None:
-            answer = await answer_provider(q)
-        else:
-            answer = "No answer available; proceed with your best judgment."
-        stream_input = Command(resume=answer)
+    preload = await memory.load(thread_id) if memory is not None else {}
+    if memory is not None:
+        await memory.start()
+    try:
+        stream_input: object = {"task": task, "thread_id": thread_id, "agent_memory": preload}
+        while True:
+            interrupt_value = None
+            async for chunk in graph.astream(stream_input, config=config, stream_mode="updates"):
+                if isinstance(chunk, dict) and "__interrupt__" in chunk:
+                    interrupt_value = chunk["__interrupt__"][0].value
+            if interrupt_value is None:
+                break
+            q = interrupt_value if isinstance(interrupt_value, dict) else {"question": str(interrupt_value)}
+            if emitter is not None:
+                await emitter.emit_question(q.get("question", ""), q.get("context", ""))
+            if answer_provider is not None:
+                answer = await answer_provider(q)
+            else:
+                answer = "No answer available; proceed with your best judgment."
+            stream_input = Command(resume=answer)
+    finally:
+        if memory is not None:
+            await memory.stop()
     snapshot = await graph.aget_state(config)
     return AgentState.model_validate(snapshot.values)
 
@@ -65,7 +76,7 @@ async def _demo() -> None:
         ai("I'll click Login", [{"name": "Click", "args": {"index": 1}, "id": "a"}]),
         ai("Done", [{"name": "Complete", "args": {"success": True, "reason": "done"}, "id": "b"}]),
     ])
-    graph, emitter, store, sink = build_default_app(session=FakeBrowserSession(), llm=llm)
+    graph, emitter, store, sink, _ = build_default_app(session=FakeBrowserSession(), llm=llm)
     final = await run(graph, task="log in (fake demo)", thread_id="demo")
     print(f"status={final.status} success={final.success} reason={final.reason!r}")
     for ev in sink.events:

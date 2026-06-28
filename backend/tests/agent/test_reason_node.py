@@ -27,7 +27,7 @@ async def test_reason_missing_reasoning_retries_then_fails():
     delta = await node(AgentState(task="t", thread_id="t1", messages=[HumanMessage(content="page")]))
     assert delta["status"] == "failed" and delta["error_code"] == ErrorCode.REASONING_MISSING
     assert delta["finished"] is True
-    assert llm.calls == 2  # retried exactly once
+    assert len(llm.calls) == 2  # retried exactly once
 
 
 async def test_reason_nudges_on_reentry_without_tool_call():
