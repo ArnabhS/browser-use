@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     agent_model: str = "anthropic/claude-sonnet-4.6"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     max_steps: int = 25
+    llm_temperature: float = 0.2
+    llm_max_retries: int = 3
 
 
 @lru_cache
