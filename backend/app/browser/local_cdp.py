@@ -150,11 +150,15 @@ class LocalCDPSession:
             if geo is None:
                 return ActionResult(success=False, reason=f"stale index {args.get('index')}")
             cx, cy = geo
+            before = set(self.page.context.pages)
             await self.page.mouse.click(cx, cy)
             if name == "type":
                 await self.page.keyboard.type(str(args.get("text", "")))
             await self._settle()
-            return ActionResult(success=True, reason=f"{name} at [{args['index']}]")
+            # Only a click can open a new tab; typing into a field never does — skip the wait.
+            followed = await self._adopt_new_tab(before) if name == "click" else False
+            tab = " (followed new tab)" if followed else ""
+            return ActionResult(success=True, reason=f"{name} at [{args['index']}]{tab}")
         if name == "scroll":
             dy = 600 * int(args.get("amount", 1)) * (-1 if args.get("direction") == "up" else 1)
             await self.page.mouse.wheel(0, dy)
@@ -167,9 +171,11 @@ class LocalCDPSession:
             text = (await self.page.inner_text("body"))[:4000]
             return ActionResult(success=True, reason=text)
         if name == "press_key":
+            before = set(self.page.context.pages)
             await self.page.keyboard.press(str(args["key"]))
             await self._settle()
-            return ActionResult(success=True, reason=f"pressed {args['key']}")
+            tab = " (followed new tab)" if await self._adopt_new_tab(before) else ""
+            return ActionResult(success=True, reason=f"pressed {args['key']}{tab}")
         if name == "clear":
             geo = self.index_map.get(int(args["index"]))
             if geo is None:
@@ -207,6 +213,33 @@ class LocalCDPSession:
             self._page = ctx.pages[-1] if ctx.pages else None
             return ActionResult(success=True, reason=f"closed tab {i}")
         return ActionResult(success=False, reason=f"unsupported action {name}")
+
+    async def _adopt_new_tab(self, before: set) -> bool:
+        """If the last action opened a new tab (product/search result in a new window, via
+        target=_blank or window.open), make it the active page so the next observation reflects
+        what the user would now be looking at — instead of the unchanged original tab."""
+        ctx = self.page.context
+
+        def _fresh():
+            return [p for p in ctx.pages if p not in before and not p.is_closed()]
+
+        opened = _fresh()
+        # The tab can take ~1–3s to register (it's a fresh navigation) — poll the live page
+        # list (not an event, so we can't miss one fired in the gap). Early-exits the instant a
+        # tab appears, so tab-opening clicks pay only the real open time, not the whole window.
+        for _ in range(30):
+            if opened:
+                break
+            await asyncio.sleep(0.1)
+            opened = _fresh()
+        if not opened:
+            return False
+        self._page = opened[-1]  # follow the newest tab the action spawned
+        try:
+            await self._page.wait_for_load_state("load", timeout=8000)
+        except Exception:
+            pass
+        return True
 
     async def _settle(self, bound: float = 5.0) -> None:
         # After an action that may navigate (Enter submits a form, a link click), wait for the
