@@ -52,12 +52,46 @@ EXTRACT_JS = r"""
 """
 
 
-async def extract(page) -> tuple[list[RawElement], PageMeta]:
-    data = await page.evaluate(EXTRACT_JS)
-    raw = [RawElement(**e) for e in data["elements"]]
-    meta = PageMeta(
-        url=data["url"], title=data["title"],
-        viewport_width=data["viewport_width"], viewport_height=data["viewport_height"],
-        scroll_x=data["scroll_x"], scroll_y=data["scroll_y"],
-    )
-    return raw, meta
+_NAV_MARKERS = (
+    "execution context was destroyed",
+    "navigating and changing the content",
+    "frame was detached",
+    "cannot find context",
+)
+
+
+def _is_navigation_error(exc: Exception) -> bool:
+    """A page.evaluate that raced an in-flight navigation (the JS context was torn down)."""
+    msg = str(exc).lower()
+    return any(m in msg for m in _NAV_MARKERS)
+
+
+async def extract(page, *, retries: int = 3) -> tuple[list[RawElement], PageMeta]:
+    """Run the DOM funnel. Resilient to navigations (e.g. Enter submits a search → the page
+    navigates mid-evaluate): on a destroyed context, wait for the new page to load and retry."""
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        # Best-effort: don't evaluate against a half-built document.
+        try:
+            await page.wait_for_load_state("domcontentloaded", timeout=8000)
+        except Exception:
+            pass
+        try:
+            data = await page.evaluate(EXTRACT_JS)
+        except Exception as exc:
+            if not _is_navigation_error(exc) or attempt == retries - 1:
+                raise
+            last_exc = exc
+            try:  # the page is navigating — let it settle, then retry against the new context
+                await page.wait_for_load_state("load", timeout=10000)
+            except Exception:
+                pass
+            continue
+        raw = [RawElement(**e) for e in data["elements"]]
+        meta = PageMeta(
+            url=data["url"], title=data["title"],
+            viewport_width=data["viewport_width"], viewport_height=data["viewport_height"],
+            scroll_x=data["scroll_x"], scroll_y=data["scroll_y"],
+        )
+        return raw, meta
+    raise last_exc if last_exc else RuntimeError("extract failed")

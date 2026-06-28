@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     use_vision: bool = False
     runs_dir: str = "runs"
     cdp_headless: bool = False
+    # When set (e.g. "http://localhost:9222"), attach to the user's running Chrome over CDP
+    # instead of launching a fresh Chromium. Empty = launch a throwaway browser.
+    cdp_connect_url: str = ""
 
 
 @lru_cache

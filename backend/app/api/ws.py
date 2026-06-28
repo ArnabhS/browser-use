@@ -35,7 +35,11 @@ async def build_running_app(sink):
     Returns (graph, emitter, memory, cleanup) where cleanup() stops the browser.
     """
     settings = get_settings()
-    session = LocalCDPSession(headless=settings.cdp_headless)
+    session = LocalCDPSession(
+        headless=settings.cdp_headless,
+        draw_som_overlay=settings.use_vision,
+        connect_url=settings.cdp_connect_url or None,
+    )
     await session.start()
     graph, emitter, store, _sink, memory = build_default_app(session=session, sink=sink)
 

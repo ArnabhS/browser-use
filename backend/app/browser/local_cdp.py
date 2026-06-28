@@ -46,9 +46,18 @@ _SOM_OVERLAY_JS = """
 class LocalCDPSession:
     """BrowserSession over a local headless Chromium (Playwright). Real eyes + trusted hands."""
 
-    def __init__(self, *, headless: bool = True, draw_som_overlay: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        headless: bool = True,
+        draw_som_overlay: bool = False,
+        connect_url: str | None = None,
+    ) -> None:
         self._headless = headless
         self._draw_overlay = draw_som_overlay
+        # If set (e.g. "http://localhost:9222"), attach to the user's already-running Chrome
+        # over CDP instead of launching a fresh Chromium — drives their real profile/logins.
+        self._connect_url = connect_url
         self._pw = None
         self._browser: Browser | None = None
         self._page: Page | None = None
@@ -59,12 +68,26 @@ class LocalCDPSession:
 
     async def start(self) -> None:
         self._pw = await async_playwright().start()
-        self._browser = await self._pw.chromium.launch(headless=self._headless)
-        context = await self._browser.new_context()
-        self._page = await context.new_page()
+        if self._connect_url:
+            # Attach to the user's running Chrome (started with --remote-debugging-port=PORT).
+            # Reuse their existing context (cookies/logins) and open a fresh tab there.
+            self._browser = await self._pw.chromium.connect_over_cdp(self._connect_url)
+            ctx = self._browser.contexts[0] if self._browser.contexts else await self._browser.new_context()
+            self._page = await ctx.new_page()
+        else:
+            self._browser = await self._pw.chromium.launch(headless=self._headless)
+            ctx = await self._browser.new_context()
+            self._page = await ctx.new_page()
 
     async def stop(self) -> None:
+        # Attached to the user's real browser: close only our tab, never their browser.
+        if self._connect_url and self._page is not None:
+            try:
+                await self._page.close()
+            except Exception:
+                pass
         if self._browser is not None:
+            # For connect_over_cdp this disconnects Playwright without killing their Chrome.
             await self._browser.close()
         if self._pw is not None:
             await self._pw.stop()
@@ -174,10 +197,18 @@ class LocalCDPSession:
             return ActionResult(success=True, reason=f"closed tab {i}")
         return ActionResult(success=False, reason=f"unsupported action {name}")
 
-    async def _settle(self, bound: float = 3.0) -> None:
+    async def _settle(self, bound: float = 5.0) -> None:
+        # After an action that may navigate (Enter submits a form, a link click), wait for the
+        # new page to finish loading first, then briefly for the network to quiet. Heavy sites
+        # never reach networkidle, so that wait is short and best-effort; extract() retries if a
+        # navigation is still in flight when we observe.
         try:
-            await self.page.wait_for_load_state("networkidle", timeout=bound * 1000)
-        except PWTimeout:
+            await self.page.wait_for_load_state("load", timeout=bound * 1000)
+        except Exception:
+            pass
+        try:
+            await self.page.wait_for_load_state("networkidle", timeout=2000)
+        except Exception:
             pass
 
     async def tabs(self) -> list[TabInfo]:
