@@ -140,3 +140,71 @@ def test_ask_user_round_trip(monkeypatch):
     assert finalize_events, "no finalize event found"
     assert finalize_events[-1]["data"]["success"] is True
     assert post[-1]["event"] == "run_complete"
+
+
+# ---------------------------------------------------------------------------
+# Test 3: Stop cancels a running task
+# ---------------------------------------------------------------------------
+
+
+def test_stop_cancels_running_task(monkeypatch):
+    """A long-running task can be stopped; the cockpit gets run_complete with stopped=True."""
+    import asyncio
+
+    from browser_agent_contracts import ActionResult, Observation, Viewport
+
+    class _SlowVaryingBrowser:
+        """Never settles: each observe is a *different* page (so the stuck guard won't end it)."""
+
+        def __init__(self) -> None:
+            self.n = 0
+            self.latest_screenshot = None
+
+        async def observe(self, *, include_som: bool = True) -> Observation:
+            await asyncio.sleep(0.15)
+            self.n += 1
+            return Observation(url=f"about:blank#{self.n}", title="", viewport=Viewport(width=1280, height=800))
+
+        async def act(self, call) -> ActionResult:
+            await asyncio.sleep(0.15)
+            return ActionResult(success=True, reason="ok")
+
+        async def navigate(self, url) -> ActionResult:
+            return ActionResult(success=True, reason="ok")
+
+        async def tabs(self):
+            return []
+
+    turns = [ai("scrolling", [{"name": "Scroll", "args": {"direction": "down"}, "id": f"s{i}"}]) for i in range(60)]
+
+    async def _slow_build(sink):
+        from app.config.container import build_default_app
+
+        graph, emitter, store, _s, memory = build_default_app(
+            session=_SlowVaryingBrowser(), llm=FakeLLMClient(turns=turns), sink=sink
+        )
+
+        async def cleanup() -> None:
+            pass
+
+        return graph, emitter, memory, cleanup
+
+    monkeypatch.setattr("app.api.ws.build_running_app", _slow_build)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/run") as ws:
+            ws.send_json({"type": "start", "task": "scroll forever"})
+            # wait until it is demonstrably running
+            for _ in range(60):
+                if ws.receive_json().get("event") in {"observation", "reasoning", "tool_call"}:
+                    break
+            ws.send_json({"type": "stop"})
+            final = None
+            for _ in range(200):
+                msg = ws.receive_json()
+                if msg.get("event") == "run_complete":
+                    final = msg
+                    break
+
+    assert final is not None, "never received run_complete after stop"
+    assert final["data"].get("stopped") is True

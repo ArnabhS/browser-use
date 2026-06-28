@@ -4,4 +4,11 @@ export type TimelineItem =
   | { kind: "thought"; text: string }
   | { kind: "action"; name: string; args: Record<string, unknown> };
 
-export type RunStatus = "idle" | "running" | "waiting_for_user" | "done" | "error";
+export type RunStatus =
+  | "idle"
+  | "running"
+  | "waiting_for_user"
+  | "stopping"
+  | "stopped"
+  | "done"
+  | "error";

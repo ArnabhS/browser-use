@@ -122,6 +122,24 @@ async def ws_run(websocket: WebSocket) -> None:
 
                 run_task = asyncio.create_task(_do_run())
 
+            elif mtype == "stop":
+                # Cancel the running agent task (stops the graph loop + LLM/browser work),
+                # tear down the browser, and tell the cockpit the run ended.
+                if run_task is not None and not run_task.done():
+                    run_task.cancel()
+                    try:
+                        await run_task
+                    except BaseException:
+                        pass
+                if cleanup:
+                    try:
+                        await cleanup()  # idempotent — browser may already be stopped
+                    except Exception:
+                        pass
+                await websocket.send_json(
+                    {"event": "run_complete", "data": {"stopped": True}, "ts": _now()}
+                )
+
             # unknown messages ignored
 
     except WebSocketDisconnect:

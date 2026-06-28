@@ -9,10 +9,12 @@ export interface Question {
 export interface RunResult {
   success: boolean;
   reason: string;
+  stopped?: boolean;
 }
 
 export interface AgentRunState {
   status: RunStatus;
+  task: string;
   timeline: TimelineItem[];
   streaming: string;
   question: Question | null;
@@ -20,12 +22,15 @@ export interface AgentRunState {
   error: string | null;
   start: (task: string) => void;
   answer: (text: string) => void;
+  stop: () => void;
 }
 
 const WS_URL = (import.meta.env.VITE_WS_URL as string | undefined) ?? "ws://localhost:8000/ws/run";
+const BUSY: RunStatus[] = ["running", "waiting_for_user", "stopping"];
 
 export function useAgentRun(): AgentRunState {
   const [status, setStatus] = useState<RunStatus>("idle");
+  const [task, setTask] = useState<string>("");
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [streaming, setStreaming] = useState<string>("");
   const [question, setQuestion] = useState<Question | null>(null);
@@ -33,7 +38,6 @@ export function useAgentRun(): AgentRunState {
   const [error, setError] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
-  // Keep streaming in a ref so event handlers always see the current value
   const streamingRef = useRef<string>("");
 
   const closeSocket = useCallback(() => {
@@ -52,12 +56,20 @@ export function useAgentRun(): AgentRunState {
     }
   }, []);
 
-  const start = useCallback(
-    (task: string) => {
-      closeSocket();
+  const flushStreaming = useCallback(() => {
+    if (streamingRef.current.trim()) {
+      const text = streamingRef.current;
+      setTimeline((prev) => [...prev, { kind: "thought", text }]);
+    }
+    streamingRef.current = "";
+    setStreaming("");
+  }, []);
 
-      // Reset all state
+  const start = useCallback(
+    (taskText: string) => {
+      closeSocket();
       setStatus("running");
+      setTask(taskText);
       setTimeline([]);
       setStreaming("");
       streamingRef.current = "";
@@ -68,13 +80,11 @@ export function useAgentRun(): AgentRunState {
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ type: "start", task }));
-      };
+      ws.onopen = () => ws.send(JSON.stringify({ type: "start", task: taskText }));
 
       ws.onerror = () => {
         setError(
-          `Can't reach the backend at ${WS_URL}. Is it running? ` +
+          `Can't reach the agent at ${WS_URL}. Is the backend running? ` +
             `Start it with:  cd backend && uv run uvicorn app.api.main:app --port 8000`
         );
         setStatus("error");
@@ -88,61 +98,59 @@ export function useAgentRun(): AgentRunState {
         } catch {
           return;
         }
-
         const { event, data } = parsed;
 
         if (event === "stream") {
-          const token = (data.token as string | undefined) ?? "";
-          streamingRef.current += token;
+          streamingRef.current += (data.token as string | undefined) ?? "";
           setStreaming(streamingRef.current);
         } else if (event === "reasoning") {
-          const text = (data.text as string | undefined) ?? "";
-          streamingRef.current = text;
-          setStreaming(text);
+          streamingRef.current = (data.text as string | undefined) ?? "";
+          setStreaming(streamingRef.current);
         } else if (event === "tool_call") {
-          const name = (data.name as string | undefined) ?? "";
-          const args = (data.args as Record<string, unknown> | undefined) ?? {};
-          // Flush current streaming buffer as a thought first
-          if (streamingRef.current.trim()) {
-            const capturedText = streamingRef.current;
-            setTimeline((prev) => [...prev, { kind: "thought", text: capturedText }]);
-            streamingRef.current = "";
-            setStreaming("");
-          }
-          setTimeline((prev) => [...prev, { kind: "action", name, args }]);
+          flushStreaming();
+          setTimeline((prev) => [
+            ...prev,
+            {
+              kind: "action",
+              name: (data.name as string | undefined) ?? "",
+              args: (data.args as Record<string, unknown> | undefined) ?? {},
+            },
+          ]);
         } else if (event === "question") {
-          const q = (data.question as string | undefined) ?? "";
-          const ctx = data.context as string | undefined;
-          setQuestion({ question: q, context: ctx });
+          flushStreaming();
+          setQuestion({
+            question: (data.question as string | undefined) ?? "",
+            context: data.context as string | undefined,
+          });
           setStatus("waiting_for_user");
         } else if (event === "finalize") {
-          const success = Boolean(data.success);
-          const reason = (data.reason as string | undefined) ?? "";
-          setResult({ success, reason });
+          setResult({
+            success: Boolean(data.success),
+            reason: (data.reason as string | undefined) ?? "",
+          });
         } else if (event === "error") {
-          const message = (data.message as string | undefined) ?? "Unknown error";
-          setError(message);
+          setError((data.message as string | undefined) ?? "Something went wrong.");
           setStatus("error");
         } else if (event === "run_complete") {
-          // Flush any remaining streaming content
-          if (streamingRef.current.trim()) {
-            const capturedText = streamingRef.current;
-            setTimeline((prev) => [...prev, { kind: "thought", text: capturedText }]);
-            streamingRef.current = "";
-            setStreaming("");
+          flushStreaming();
+          const stopped = Boolean(data.stopped);
+          if (stopped) {
+            setResult({
+              success: false,
+              stopped: true,
+              reason: (data.reason as string | undefined) ?? "Stopped by you.",
+            });
           }
-          setStatus((prev) => (prev === "error" ? "error" : "done"));
+          setStatus((prev) => (prev === "error" ? "error" : stopped ? "stopped" : "done"));
           closeSocket();
         }
-        // Ignore: status, usage, context_status, observation
       };
 
       ws.onclose = () => {
-        // If we closed unexpectedly (not via run_complete), treat as done
-        setStatus((prev) => (prev === "running" || prev === "waiting_for_user" ? "done" : prev));
+        setStatus((prev) => (BUSY.includes(prev) ? "done" : prev));
       };
     },
-    [closeSocket]
+    [closeSocket, flushStreaming]
   );
 
   const answer = useCallback(
@@ -154,12 +162,13 @@ export function useAgentRun(): AgentRunState {
     [send]
   );
 
-  // Clean up on unmount
-  useEffect(() => {
-    return () => {
-      closeSocket();
-    };
-  }, [closeSocket]);
+  const stop = useCallback(() => {
+    send({ type: "stop" });
+    setQuestion(null);
+    setStatus("stopping");
+  }, [send]);
 
-  return { status, timeline, streaming, question, result, error, start, answer };
+  useEffect(() => () => closeSocket(), [closeSocket]);
+
+  return { status, task, timeline, streaming, question, result, error, start, answer, stop };
 }
