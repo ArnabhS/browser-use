@@ -43,6 +43,8 @@ def build_reason_node(llm: LLMClient, emitter: EventEmitter):
             nudge_delta = {"nudge_count": state.nudge_count + 1}
 
         compacted, ctx_status = compact_for_llm(messages)
+        if compacted and isinstance(compacted[0], AIMessage):
+            compacted = [HumanMessage(content=state.task), *compacted]
         system = build_system_message(state)
         ai = await llm.complete(messages=[system, *compacted], tools=TOOL_SPECS)
 

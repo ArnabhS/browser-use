@@ -24,3 +24,10 @@ async def test_old_observations_not_sent_to_llm_and_status_emitted():
     assert any(ev.event == "context_status" for ev in sink.events), (
         "No context_status event found in sink; emitter.emit_context_status not wired"
     )
+
+    # the first message after the system message is never an AIMessage (user-role-first guard)
+    from langchain_core.messages import AIMessage
+    for call in llm.calls:
+        assert not isinstance(call[1], AIMessage), (
+            "First non-system message in LLM call is an AIMessage — user-role-first guard failed"
+        )

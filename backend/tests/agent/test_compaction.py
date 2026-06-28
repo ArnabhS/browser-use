@@ -23,20 +23,23 @@ def test_drops_all_but_the_latest_observation():
     assert any(isinstance(m, ToolMessage) and m.tool_call_id == "t1" for m in out)
 
 
-def test_truncates_long_old_tool_output_but_not_recent():
+def test_truncates_old_tool_output_but_not_the_current_turn():
     big = "x" * 5000
     msgs = [
+        _obs("page 1"),
         AIMessage(content="", tool_calls=[{"name": "Extract", "args": {}, "id": "t1"}]),
-        ToolMessage(content=big, tool_call_id="t1", name="Extract"),   # old (before last obs)
-        _obs("current page"),
+        ToolMessage(content=big, tool_call_id="t1", name="Extract"),   # 2 obs ago -> truncate
+        _obs("page 2"),
         AIMessage(content="", tool_calls=[{"name": "Extract", "args": {}, "id": "t2"}]),
-        ToolMessage(content=big, tool_call_id="t2", name="Extract"),   # recent (after last obs)
+        ToolMessage(content=big, tool_call_id="t2", name="Extract"),   # current turn -> keep full
+        _obs("page 3"),
     ]
     out, status = compact_for_llm(msgs, max_tool_chars=2000)
     tool_contents = [m.content for m in out if isinstance(m, ToolMessage)]
     assert any(len(c) < 2100 and "truncated" in c for c in tool_contents)   # old one truncated
-    assert any(len(c) == 5000 for c in tool_contents)                       # recent one intact
+    assert any(len(c) == 5000 for c in tool_contents)                       # current-turn one intact
     assert status["truncated_tools"] == 1
+    assert status["dropped_observations"] == 2
 
 
 def test_no_observations_is_a_noop():

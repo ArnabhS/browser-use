@@ -17,8 +17,11 @@ def compact_for_llm(
     messages: list[BaseMessage], *, max_tool_chars: int = 2000
 ) -> tuple[list[BaseMessage], dict]:
     obs_idxs = [i for i, m in enumerate(messages) if _is_observation(m)]
-    last_obs = obs_idxs[-1] if obs_idxs else -1
     keep_obs = set(obs_idxs[-1:])
+    # Truncate tool outputs OLDER than the second-to-last observation; the freshest
+    # action's output sits between the last two observations and must stay intact
+    # (graph order act->observe->reason puts every tool msg before the latest obs).
+    trunc_before = obs_idxs[-2] if len(obs_idxs) >= 2 else -1
 
     out: list[BaseMessage] = []
     dropped = truncated = 0
@@ -28,7 +31,7 @@ def compact_for_llm(
             continue
         if (
             isinstance(m, ToolMessage)
-            and i < last_obs
+            and i < trunc_before
             and isinstance(m.content, str)
             and len(m.content) > max_tool_chars
         ):
@@ -37,6 +40,8 @@ def compact_for_llm(
                     content=m.content[:max_tool_chars] + " …[truncated]",
                     tool_call_id=m.tool_call_id,
                     name=m.name,
+                    status=m.status,
+                    additional_kwargs=m.additional_kwargs,
                 )
             )
             truncated += 1
