@@ -20,4 +20,13 @@ def format_observation(obs: Observation) -> str:
         lines.append("(none)")
     if obs.dropped_count:
         lines.append(f"({obs.dropped_count} lower-priority elements hidden — scroll to reveal)")
+    if len(obs.tabs) > 1:
+        lines.append("Open tabs:")
+        for tab in obs.tabs:
+            row = f'[{tab.id}] "{tab.title}"' if tab.title else f"[{tab.id}]"
+            if tab.url:
+                row += f" — {tab.url}"
+            if tab.active:
+                row += " (active)"
+            lines.append(row)
     return "\n".join(lines)

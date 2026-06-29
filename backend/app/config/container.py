@@ -14,7 +14,11 @@ def build_default_app(*, session=None, llm=None, sink: EventSink | None = None, 
     if session is None:
         if settings.browser_backend == "local_cdp":
             from app.browser.local_cdp import LocalCDPSession
-            session = LocalCDPSession(draw_som_overlay=settings.use_vision)  # caller must `await session.start()` before running
+            session = LocalCDPSession(
+                draw_som_overlay=settings.use_vision,
+                funnel_debug=settings.funnel_debug,
+                funnel_focus=settings.funnel_focus,
+            )  # caller must `await session.start()` before running
         else:
             raise ValueError("No session provided and browser_backend is not 'local_cdp'.")
     sink = sink or BufferSink()

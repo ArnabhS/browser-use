@@ -24,10 +24,3 @@ class StepRecord(BaseModel):
     output_tokens: int = 0
     latency_ms: float = 0.0
     model: str = ""
-
-
-class TabInfo(BaseModel):
-    target_id: str
-    url: str
-    title: str = ""
-    active: bool = False

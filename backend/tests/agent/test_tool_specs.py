@@ -6,9 +6,10 @@ def test_specs_have_expected_names():
     assert names == {
         "Navigate", "Click", "TypeText", "Scroll", "Extract", "WaitFor",
         "PressKey", "Clear", "SelectOption", "NewTab", "SwitchTab", "CloseTab",
+        "ObserveTab", "OpenInNewTab",
         "Remember", "Recall", "SetPlan", "AskUser", "Complete",
     }
-    assert len(names) == 17
+    assert len(names) == 19
 
 
 def test_ask_user_spec():

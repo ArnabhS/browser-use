@@ -33,3 +33,31 @@ async def test_scroll_at_edge_reports_no_movement():
         assert r.success is False                  # nothing to scroll → honest failure
     finally:
         await sess.stop()
+
+
+async def test_scroll_index_scrolls_the_inner_container_not_the_window():
+    """A modal/feed lives in an overflow:auto box; scroll(index=N) must move THAT box."""
+    sess = LocalCDPSession()
+    await sess.start()
+    try:
+        await sess.page.set_content(
+            "<div id='box' style='height:200px;width:300px;overflow:auto;border:1px solid'>"
+            "<div style='height:4000px'>"
+            "<button style='margin-top:40px'>topbtn</button>"
+            "</div></div>"
+            "<div style='height:3000px'>tall body — the WINDOW is scrollable too</div>"
+        )
+        obs = await sess.observe()
+        btn = next(e for e in obs.elements if "topbtn" in (e.name or "").lower())
+        win0 = await sess.page.evaluate("() => window.scrollY")
+        top0 = await sess.page.evaluate("() => document.getElementById('box').scrollTop")
+        r = await sess.act(
+            ActionCall(name="scroll", args={"direction": "down", "amount": 2, "index": btn.index})
+        )
+        top1 = await sess.page.evaluate("() => document.getElementById('box').scrollTop")
+        win1 = await sess.page.evaluate("() => window.scrollY")
+        assert r.success is True
+        assert top1 > top0 + 100                   # the inner container moved
+        assert win1 == win0                        # the window did NOT
+    finally:
+        await sess.stop()

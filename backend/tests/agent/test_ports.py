@@ -1,5 +1,5 @@
 from browser_agent_contracts import ActionCall, ActionResult
-from app.telemetry.records import ErrorCode, StepRecord, TabInfo
+from app.telemetry.records import ErrorCode, StepRecord
 from app.telemetry.store import InMemoryTrajectoryStore
 
 

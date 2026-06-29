@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     # When set (e.g. "http://localhost:9222"), attach to the user's running Chrome over CDP
     # instead of launching a fresh Chromium. Empty = launch a throwaway browser.
     cdp_connect_url: str = ""
+    # Diagnostics: when on, log a per-stage funnel trace + a raw-DOM probe each observe so you
+    # can see exactly where an element you can SEE but can't click gets dropped. `funnel_focus`
+    # is the text to track (e.g. "add to cart"). Off by default; enable via env for a debug run.
+    funnel_debug: bool = False
+    funnel_focus: str = ""
 
 
 @lru_cache

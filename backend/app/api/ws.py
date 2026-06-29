@@ -39,6 +39,8 @@ async def build_running_app(sink):
         headless=settings.cdp_headless,
         draw_som_overlay=settings.use_vision,
         connect_url=settings.cdp_connect_url or None,
+        funnel_debug=settings.funnel_debug,
+        funnel_focus=settings.funnel_focus,
     )
     await session.start()
     graph, emitter, store, _sink, memory = build_default_app(session=session, sink=sink)

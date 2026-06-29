@@ -24,6 +24,15 @@ class Element(BaseModel):
     value: str | None = None
 
 
+class Tab(BaseModel):
+    """One open browser tab. `id` is a stable per-session integer the agent uses to
+    SwitchTab/CloseTab — it is NOT a positional index and never gets reused."""
+    id: int
+    title: str = ""
+    url: str = ""
+    active: bool = False
+
+
 class Observation(BaseModel):
     model_config = _CAMEL
     protocol_version: str = Field(default=PROTOCOL_VERSION, alias="protocolVersion")
@@ -31,6 +40,7 @@ class Observation(BaseModel):
     title: str = ""
     viewport: Viewport
     elements: list[Element] = Field(default_factory=list)
+    tabs: list[Tab] = Field(default_factory=list)
     screenshot_ref: str | None = Field(default=None, alias="screenshotRef")
     changed: str | None = None
     dropped_count: int = Field(default=0, alias="droppedCount")
