@@ -11,6 +11,7 @@ class ErrorCode(str, Enum):
     REASONING_MISSING = "REASONING_MISSING"
     NO_ACTION = "NO_ACTION"
     MAX_STEPS = "MAX_STEPS"
+    STUCK = "STUCK"
 
 
 class StepRecord(BaseModel):
@@ -23,10 +24,3 @@ class StepRecord(BaseModel):
     output_tokens: int = 0
     latency_ms: float = 0.0
     model: str = ""
-
-
-class TabInfo(BaseModel):
-    target_id: str
-    url: str
-    title: str = ""
-    active: bool = False

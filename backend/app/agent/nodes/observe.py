@@ -11,10 +11,20 @@ from app.events.emitter import EventEmitter
 from app.telemetry.records import StepRecord
 
 
+def _signature(obs) -> tuple:
+    """Coarse page fingerprint — same url + same element set => the page did not change."""
+    return (obs.url, tuple((e.role, e.name) for e in obs.elements))
+
+
 def build_observe_node(session: BrowserSession, emitter: EventEmitter, *, use_vision: bool = False):
     async def observe(state: AgentState) -> dict:
         obs = await session.observe()
         await emitter.emit_observation(obs.url, len(obs.elements))
+        # If the page is identical to last turn, the previous action had no effect — track a
+        # "stuck" counter so the reason node can break a repeat-loop (clicking a dead element).
+        prev = state.observation
+        unchanged = prev is not None and _signature(obs) == _signature(prev)
+        stuck = state.stuck_count + 1 if unchanged else 0
         text = format_observation(obs)
         shot = getattr(session, "latest_screenshot", None)
         if use_vision and shot:
@@ -29,6 +39,7 @@ def build_observe_node(session: BrowserSession, emitter: EventEmitter, *, use_vi
             "observation": obs,
             "messages": [HumanMessage(content=content, name="observation")],
             "history": [StepRecord(step=state.step, node="observe")],
+            "stuck_count": stuck,
         }
 
     return observe

@@ -35,6 +35,35 @@
       "title": "Element",
       "type": "object"
     },
+    "Tab": {
+      "description": "One open browser tab. `id` is a stable per-session integer the agent uses to\nSwitchTab/CloseTab \u2014 it is NOT a positional index and never gets reused.",
+      "properties": {
+        "active": {
+          "default": false,
+          "title": "Active",
+          "type": "boolean"
+        },
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Tab",
+      "type": "object"
+    },
     "Viewport": {
       "properties": {
         "height": {
@@ -105,6 +134,13 @@
       ],
       "default": null,
       "title": "Screenshotref"
+    },
+    "tabs": {
+      "items": {
+        "$ref": "#/$defs/Tab"
+      },
+      "title": "Tabs",
+      "type": "array"
     },
     "title": {
       "default": "",

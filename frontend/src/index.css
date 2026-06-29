@@ -1,1 +1,81 @@
 @import "tailwindcss";
+
+@theme {
+  /* warm "ink" control-room canvas + a single cool teal signal */
+  --color-ink: #131210;
+  --color-raised: #1b1a16;
+  --color-raised2: #232019;
+  --color-line: #2b2823;
+  --color-line2: #3a352c;
+  --color-text: #ece6d9;
+  --color-muted: #968e7f;
+  --color-faint: #6b6457;
+  --color-accent: #5ac8bc;
+  --color-accentdim: #3f8d85;
+  --color-ok: #8fb56a;
+  --color-warn: #e08a5b;
+
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* the agent's live "thinking" cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.cursor::after {
+  content: "";
+  display: inline-block;
+  width: 0.5ch;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--color-accent);
+  animation: blink 1.05s steps(2, start) infinite;
+}
+
+/* each new transcript row rises into place */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+.rise { animation: rise 0.26s ease-out both; }
+
+/* the active step's spine node breathes */
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 50%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-accent) 0%, transparent); }
+}
+.node-live { animation: breathe 1.7s ease-out infinite; }
+
+/* thin scrollbar that fades into the canvas */
+.scroll-area::-webkit-scrollbar { width: 10px; }
+.scroll-area::-webkit-scrollbar-thumb {
+  background: var(--color-line2);
+  border: 3px solid var(--color-ink);
+  border-radius: 999px;
+}
+.scroll-area::-webkit-scrollbar-track { background: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor::after,
+  .rise,
+  .node-live { animation: none; }
+}

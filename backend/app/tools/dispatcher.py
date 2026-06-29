@@ -24,6 +24,8 @@ _BROWSER_ACTION = {
     "NewTab": "new_tab",
     "SwitchTab": "switch_tab",
     "CloseTab": "close_tab",
+    "ObserveTab": "observe_tab",
+    "OpenInNewTab": "open_in_new_tab",
 }
 
 

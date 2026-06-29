@@ -22,9 +22,10 @@ class TypeText(BaseModel):
 
 
 class Scroll(BaseModel):
-    """Scroll the page up or down by `amount` viewport steps."""
+    """Scroll up or down by `amount` viewport-heights. Set `index` to scroll the scrollable box that element sits in (a modal, chat pane, or inner list) instead of the whole page."""
     direction: Literal["up", "down"]
     amount: int = 1
+    index: int | None = None
 
 
 class Extract(BaseModel):
@@ -59,13 +60,23 @@ class NewTab(BaseModel):
 
 
 class SwitchTab(BaseModel):
-    """Switch the active tab to the one with the given target_id (from the tab list)."""
+    """Switch the active tab to the tab with the given id (the [N] shown under 'Open tabs')."""
     target_id: str
 
 
 class CloseTab(BaseModel):
-    """Close the tab with the given target_id."""
+    """Close the tab with the given id (the [N] shown under 'Open tabs')."""
     target_id: str
+
+
+class ObserveTab(BaseModel):
+    """Read another tab's title + URL WITHOUT switching to it — to decide whether it's the one you want before SwitchTab."""
+    target_id: str
+
+
+class OpenInNewTab(BaseModel):
+    """Open the link at the given element index in a NEW background tab, staying on the current tab. Use to queue several results (e.g. products) then SwitchTab to compare them."""
+    index: int
 
 
 class Remember(BaseModel):
@@ -97,12 +108,13 @@ class Complete(BaseModel):
 
 TOOL_SPECS: list[type[BaseModel]] = [
     Navigate, Click, TypeText, Scroll, Extract, WaitFor,
-    PressKey, Clear, SelectOption, NewTab, SwitchTab, CloseTab,
+    PressKey, Clear, SelectOption, NewTab, SwitchTab, CloseTab, ObserveTab, OpenInNewTab,
     Remember, Recall, SetPlan, AskUser, Complete,
 ]
 
 BROWSER_TOOLS = {"Navigate", "Click", "TypeText", "Scroll", "Extract", "WaitFor",
-                 "PressKey", "Clear", "SelectOption", "NewTab", "SwitchTab", "CloseTab"}
+                 "PressKey", "Clear", "SelectOption", "NewTab", "SwitchTab", "CloseTab",
+                 "ObserveTab", "OpenInNewTab"}
 MEMORY_TOOLS = {"Remember", "Recall"}
 CONTROL_TOOLS = {"SetPlan", "Complete", "AskUser"}
 

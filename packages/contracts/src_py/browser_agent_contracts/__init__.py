@@ -1,4 +1,4 @@
-from .models import ActionCall, ActionResult, Element, Envelope, Observation, Viewport
+from .models import ActionCall, ActionResult, Element, Envelope, Observation, Tab, Viewport
 from .version import PROTOCOL_VERSION
 
 __all__ = [
@@ -9,4 +9,5 @@ __all__ = [
     "Envelope",
     "Viewport",
     "Element",
+    "Tab",
 ]

@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from typing import Annotated
+
+from pydantic import BaseModel, BeforeValidator
+
+# window.scrollY/scrollX (and viewport dims under zoom) come back as fractional pixels on
+# hi-DPI / zoomed / very long pages (e.g. 10129.5). Round them so they satisfy an int field
+# instead of crashing extraction mid-run.
+RoundedInt = Annotated[
+    int, BeforeValidator(lambda v: round(v) if isinstance(v, float) else v)
+]
 
 
 class RawElement(BaseModel):
@@ -20,7 +29,7 @@ class RawElement(BaseModel):
 class PageMeta(BaseModel):
     url: str
     title: str = ""
-    viewport_width: int
-    viewport_height: int
-    scroll_x: int = 0
-    scroll_y: int = 0
+    viewport_width: RoundedInt
+    viewport_height: RoundedInt
+    scroll_x: RoundedInt = 0
+    scroll_y: RoundedInt = 0

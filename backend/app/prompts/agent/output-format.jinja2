@@ -1,1 +1,5 @@
-Respond with your reasoning as plain text, then a single tool call. Never emit a tool call with empty reasoning.
+Every turn, write your reasoning in plain text FIRST (never empty), then make exactly one tool call. Keep the reasoning short and concrete, covering two things:
+1. Assess: what did your last action do — did the page change the way you expected, or did nothing happen? When a screenshot is provided, cross-check it against the numbered list so you act on the right element.
+2. Decide: the single next action and why it moves the task forward.
+
+Then call exactly one tool. Never emit a tool call with empty reasoning.
