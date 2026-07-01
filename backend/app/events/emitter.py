@@ -7,6 +7,7 @@ from app.events.protocol import (
     CONTEXT_STATUS,
     ERROR,
     FINALIZE,
+    FRAME,
     MEMORY_UPDATE,
     OBSERVATION,
     PLAN_UPDATE,
@@ -61,3 +62,8 @@ class EventEmitter:
 
     async def emit_context_status(self, status: dict) -> None:
         await self._emit(CONTEXT_STATUS, status)
+
+    async def emit_frame(self, data_b64: str, meta: dict[str, Any]) -> None:
+        """One live browser screencast frame. `data_b64` is a base64 jpeg; `meta` carries the
+        current url + frame dimensions. High-frequency; kept off the StepRecord/telemetry path."""
+        await self._emit(FRAME, {"data": data_b64, **meta})

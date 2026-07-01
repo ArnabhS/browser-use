@@ -4,6 +4,7 @@ import { useAgentRun } from "./lib/useAgentRun";
 import { Header } from "./cockpit/Header";
 import { Composer } from "./cockpit/Composer";
 import { Transcript } from "./cockpit/Transcript";
+import { Viewport } from "./cockpit/Viewport";
 
 const EXAMPLES = [
   "Open YouTube, search lofi hip hop, and play the first video",
@@ -40,7 +41,7 @@ function EmptyState({ onRun }: { onRun: (task: string) => void }) {
 }
 
 export default function App() {
-  const { status, task, timeline, streaming, question, result, error, start, answer, stop } =
+  const { status, task, timeline, streaming, question, result, error, frame, pageUrl, start, answer, stop } =
     useAgentRun();
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -53,32 +54,43 @@ export default function App() {
   return (
     <div className="flex h-full flex-col">
       <Header status={status} version={PROTOCOL_VERSION} />
-      <main className="scroll-area flex-1 overflow-y-auto">
-        <div className="mx-auto h-full max-w-[46rem] px-5 py-8">
-          {showEmpty ? (
+      {showEmpty ? (
+        <main className="scroll-area flex-1 overflow-y-auto">
+          <div className="mx-auto h-full max-w-[46rem] px-5 py-8">
             <EmptyState onRun={start} />
-          ) : (
-            <Transcript
-              task={task}
-              timeline={timeline}
-              streaming={streaming}
-              question={question}
-              result={result}
-              status={status}
-              onAnswer={answer}
-            />
-          )}
-          {error && (
-            <div className="rise mt-4 rounded-xl border border-warn/40 bg-warn/[0.07] px-4 py-3">
-              <div className="font-display text-sm font-semibold text-warn">Can't continue</div>
-              <p className="mt-1 whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-muted">
-                {error}
-              </p>
+          </div>
+        </main>
+      ) : (
+        <main className="flex min-h-0 flex-1 flex-col gap-4 p-4 lg:flex-row">
+          {/* live browser view — the streaming panel */}
+          <section className="min-h-0 basis-1/2 lg:basis-3/5">
+            <Viewport frame={frame} pageUrl={pageUrl} status={status} />
+          </section>
+          {/* reasoning + action step log */}
+          <section className="scroll-area min-h-0 flex-1 overflow-y-auto lg:basis-2/5">
+            <div className="mx-auto max-w-[44rem] px-1 py-1">
+              <Transcript
+                task={task}
+                timeline={timeline}
+                streaming={streaming}
+                question={question}
+                result={result}
+                status={status}
+                onAnswer={answer}
+              />
+              {error && (
+                <div className="rise mt-4 rounded-xl border border-warn/40 bg-warn/[0.07] px-4 py-3">
+                  <div className="font-display text-sm font-semibold text-warn">Can't continue</div>
+                  <p className="mt-1 whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-muted">
+                    {error}
+                  </p>
+                </div>
+              )}
+              <div ref={bottomRef} />
             </div>
-          )}
-          <div ref={bottomRef} />
-        </div>
-      </main>
+          </section>
+        </main>
+      )}
       <Composer status={status} onRun={start} onStop={stop} />
     </div>
   );

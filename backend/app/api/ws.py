@@ -17,14 +17,19 @@ def _now() -> str:
 
 
 class WebSocketSink:
-    """EventSink that forwards every AgentEvent to a WebSocket as JSON."""
+    """EventSink that forwards every AgentEvent to a WebSocket as JSON.
+
+    Serialized with a lock: the agent run task and the screencast frame task both write this same
+    socket, and Starlette's WebSocket.send is not safe for concurrent coroutines."""
 
     def __init__(self, ws: WebSocket) -> None:
         self._ws = ws
+        self._lock = asyncio.Lock()
 
     async def emit(self, event) -> None:
         try:
-            await self._ws.send_json(event.model_dump())
+            async with self._lock:
+                await self._ws.send_json(event.model_dump())
         except Exception:
             pass  # socket closing mid-emit — drop
 
@@ -45,6 +50,14 @@ async def build_running_app(sink):
     await session.start()
     graph, emitter, store, _sink, memory = build_default_app(session=session, sink=sink)
 
+    # Wire the live view: the session pushes screencast frames out through the emitter, over the
+    # same socket. Best-effort — if the screencast can't start, the run streams text only.
+    session.on_frame = emitter.emit_frame
+    try:
+        await session.start_stream()
+    except Exception:
+        pass
+
     stopped = False
 
     async def cleanup() -> None:
@@ -52,6 +65,10 @@ async def build_running_app(sink):
         if stopped:
             return
         stopped = True
+        try:
+            await session.stop_stream()
+        except Exception:
+            pass
         await session.stop()
 
     return graph, emitter, memory, cleanup

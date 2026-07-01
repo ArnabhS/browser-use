@@ -20,6 +20,8 @@ export interface AgentRunState {
   question: Question | null;
   result: RunResult | null;
   error: string | null;
+  frame: string | null;
+  pageUrl: string | null;
   start: (task: string) => void;
   answer: (text: string) => void;
   stop: () => void;
@@ -36,6 +38,8 @@ export function useAgentRun(): AgentRunState {
   const [question, setQuestion] = useState<Question | null>(null);
   const [result, setResult] = useState<RunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [frame, setFrame] = useState<string | null>(null);
+  const [pageUrl, setPageUrl] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const streamingRef = useRef<string>("");
@@ -76,6 +80,8 @@ export function useAgentRun(): AgentRunState {
       setQuestion(null);
       setResult(null);
       setError(null);
+      setFrame(null);
+      setPageUrl(null);
 
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
@@ -100,7 +106,13 @@ export function useAgentRun(): AgentRunState {
         }
         const { event, data } = parsed;
 
-        if (event === "stream") {
+        if (event === "frame") {
+          const b64 = data.data as string | undefined;
+          if (b64) setFrame(`data:image/jpeg;base64,${b64}`);
+          if (typeof data.url === "string") setPageUrl(data.url);
+        } else if (event === "observation") {
+          if (typeof data.url === "string") setPageUrl(data.url as string);
+        } else if (event === "stream") {
           streamingRef.current += (data.token as string | undefined) ?? "";
           setStreaming(streamingRef.current);
         } else if (event === "reasoning") {
@@ -170,5 +182,5 @@ export function useAgentRun(): AgentRunState {
 
   useEffect(() => () => closeSocket(), [closeSocket]);
 
-  return { status, task, timeline, streaming, question, result, error, start, answer, stop };
+  return { status, task, timeline, streaming, question, result, error, frame, pageUrl, start, answer, stop };
 }

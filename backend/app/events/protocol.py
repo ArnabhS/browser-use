@@ -17,6 +17,7 @@ FINALIZE = "finalize"
 STREAM = "stream"  # incremental LLM token
 QUESTION = "question"
 CONTEXT_STATUS = "context_status"
+FRAME = "frame"  # a live browser screencast frame (base64 jpeg)
 
 
 def _now_iso() -> str:

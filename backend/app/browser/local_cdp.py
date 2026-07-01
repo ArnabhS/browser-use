@@ -6,6 +6,7 @@ import logging
 from browser_agent_contracts import ActionCall, ActionResult, Observation, Tab
 from playwright.async_api import Browser, Page, TimeoutError as PWTimeout, async_playwright
 
+from app.browser.screencast import OnFrame, ScreencastStreamer
 from app.browser.tab_registry import TabRegistry
 from app.observation.extract import extract, probe_dom
 from app.observation.funnel.pipeline import run_funnel
@@ -116,6 +117,12 @@ class LocalCDPSession:
         self._registry = TabRegistry()  # stable per-session tab ids the agent reasons about
         self._cdp = None               # cached CDP session for the active page (scroll gestures)
         self._cdp_page: Page | None = None
+        # Live view: a best-effort CDP screencast of the active page, pushed out through on_frame
+        # (the composition root wires it to the event emitter). Idle until start_stream().
+        self.on_frame: OnFrame | None = None
+        self._streamer = ScreencastStreamer()
+        self._streaming = False
+        self._stream_page: Page | None = None
 
     async def start(self) -> None:
         self._pw = await async_playwright().start()
@@ -175,6 +182,7 @@ class LocalCDPSession:
 
     async def observe(self, *, include_som: bool = True) -> Observation:
         self._follow_unseen_tab()
+        await self._ensure_stream_on_active_page()
         raw, meta = await extract(self.page)
         self._shot_counter += 1
         ref = f"shot-{self._shot_counter}"
@@ -394,6 +402,43 @@ class LocalCDPSession:
             self._cdp = await self.page.context.new_cdp_session(self.page)
             self._cdp_page = self._page
         return self._cdp
+
+    async def start_stream(self) -> None:
+        """Begin a live screencast of the active page, pushed out through on_frame. Best-effort:
+        if on_frame isn't wired or the screencast can't start, the run proceeds without a live view."""
+        if self.on_frame is None:
+            return
+        self._streaming = True
+        await self._point_stream()
+
+    async def stop_stream(self) -> None:
+        self._streaming = False
+        try:
+            await self._streamer.stop()
+        except Exception:
+            pass
+        self._stream_page = None
+
+    def _active_url(self) -> str:
+        return self._page.url if self._page is not None else ""
+
+    async def _point_stream(self) -> None:
+        """(Re)bind the screencast to the current active page — its own CDP session, separate
+        from the scroll-gesture one."""
+        if not self._streaming or self.on_frame is None or self._page is None:
+            return
+        try:
+            cdp = await self.page.context.new_cdp_session(self.page)
+            await self._streamer.start(cdp, on_frame=self.on_frame, url_getter=self._active_url)
+            self._stream_page = self._page
+        except Exception as exc:
+            logger.warning("screencast re-point failed: %s", exc)
+
+    async def _ensure_stream_on_active_page(self) -> None:
+        """Follow the agent when it switches/opens tabs: re-point the stream if the active page
+        changed since we last bound it (checked each observe, right after tab auto-follow)."""
+        if self._streaming and self._stream_page is not self._page:
+            await self._point_stream()
 
     async def _log_dom_probe(self, focus: str, url: str) -> None:
         probe = await probe_dom(self.page, focus)

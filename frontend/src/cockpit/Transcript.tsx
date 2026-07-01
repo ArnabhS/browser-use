@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { RunStatus, TimelineItem } from "../lib/types";
 import type { Question, RunResult } from "../lib/useAgentRun";
 import { AskUserCard } from "./AskUserCard";
@@ -51,7 +52,7 @@ function ResultBanner({ result }: { result: RunResult }) {
   );
 }
 
-export function Transcript({
+export const Transcript = memo(function Transcript({
   task,
   timeline,
   streaming,
@@ -97,4 +98,4 @@ export function Transcript({
       </div>
     </div>
   );
-}
+});
