@@ -7,34 +7,41 @@ import { Transcript } from "./cockpit/Transcript";
 import { Viewport } from "./cockpit/Viewport";
 
 const EXAMPLES = [
-  "Open YouTube, search lofi hip hop, and play the first video",
+  "Open Flipkart, search hats, sort price low to high, add the first to cart",
   "Go to Wikipedia and give me the first paragraph of the Apollo 11 article",
 ];
 
-function EmptyState({ onRun }: { onRun: (task: string) => void }) {
+function Hero({ onRun }: { onRun: (task: string) => void }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center text-center">
-      <div className="mb-5 grid h-12 w-14 place-items-center rounded-lg border border-line2 bg-raised2">
-        <span className="node-live h-2.5 w-2.5 rounded-full bg-accent" />
+    <div>
+      <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-accentdim">
+        Autonomous browser agent
       </div>
-      <h1 className="font-display text-2xl font-semibold tracking-tight text-text">
-        Watch the agent work
+      <h1 className="mt-3 font-display text-[2rem] font-semibold leading-[1.08] tracking-tight text-text">
+        Give it a task.
+        <br />
+        Watch it drive the browser.
       </h1>
-      <p className="mt-2 max-w-md text-[15px] leading-relaxed text-muted">
-        Describe a task. The agent reads the page, reasons step by step, and drives a real
-        browser — you'll see every thought as it happens.
+      <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-muted">
+        It reads the page, reasons one step at a time, and acts in a real browser — every thought and
+        click streamed to you live.
       </p>
-      <div className="mt-7 flex w-full max-w-md flex-col gap-2">
-        {EXAMPLES.map((ex) => (
-          <button
-            key={ex}
-            onClick={() => onRun(ex)}
-            className="group rounded-xl border border-line bg-raised px-4 py-3 text-left text-sm text-muted transition-colors hover:border-line2 hover:text-text"
-          >
-            <span className="mr-2 font-mono text-accentdim group-hover:text-accent">→</span>
-            {ex}
-          </button>
-        ))}
+      <div className="mt-7">
+        <div className="mb-2 font-mono text-[11px] uppercase tracking-wider text-faint">Try one</div>
+        <div className="flex flex-col gap-2">
+          {EXAMPLES.map((ex) => (
+            <button
+              key={ex}
+              onClick={() => onRun(ex)}
+              className="group flex items-start gap-3 rounded-xl border border-line bg-raised px-4 py-3 text-left text-sm leading-relaxed text-muted transition-colors hover:border-line2 hover:bg-raised2 hover:text-text"
+            >
+              <span className="mt-0.5 font-mono text-accentdim transition-colors group-hover:text-accent">
+                →
+              </span>
+              <span>{ex}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -54,17 +61,31 @@ export default function App() {
   return (
     <div className="flex h-full flex-col">
       <Header status={status} version={PROTOCOL_VERSION} />
+
       {showEmpty ? (
         <main className="scroll-area flex-1 overflow-y-auto">
-          <div className="mx-auto h-full max-w-[46rem] px-5 py-8">
-            <EmptyState onRun={start} />
+          <div className="mx-auto flex min-h-full w-full max-w-[40rem] flex-col justify-center px-6 py-12">
+            <Hero onRun={start} />
+            <div className="mt-8">
+              <Composer status={status} onRun={start} onStop={stop} />
+            </div>
           </div>
         </main>
       ) : (
-        <main className="flex min-h-0 flex-1 flex-col gap-4 p-4 lg:flex-row">
-          {/* reasoning + action step log — left */}
-          <section className="scroll-area min-h-0 flex-1 overflow-y-auto lg:flex-[2]">
-            <div className="mx-auto max-w-[44rem] px-1 py-1">
+        <main className="flex min-h-0 flex-1 flex-col gap-3 p-3 lg:flex-row lg:gap-4 lg:p-4">
+          {/* live browser — top on mobile, hero on the right on desktop */}
+          <section className="h-[38vh] min-h-0 shrink-0 lg:order-2 lg:h-auto lg:flex-1">
+            <Viewport
+              subscribeFrame={subscribeFrame}
+              pageUrl={pageUrl}
+              status={status}
+              hasFrame={hasFrame}
+            />
+          </section>
+
+          {/* conversation rail — task → timeline → composer as one continuous column */}
+          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-raised/30 lg:order-1 lg:w-[27rem] lg:flex-none">
+            <div className="scroll-area min-h-0 flex-1 overflow-y-auto px-5 pt-5">
               <Transcript
                 task={task}
                 timeline={timeline}
@@ -84,19 +105,12 @@ export default function App() {
               )}
               <div ref={bottomRef} />
             </div>
-          </section>
-          {/* live browser view — right */}
-          <section className="min-h-0 flex-1 lg:flex-[3]">
-            <Viewport
-              subscribeFrame={subscribeFrame}
-              pageUrl={pageUrl}
-              status={status}
-              hasFrame={hasFrame}
-            />
+            <div className="shrink-0 border-t border-line bg-ink/50 px-5 pb-4 pt-3">
+              <Composer status={status} onRun={start} onStop={stop} />
+            </div>
           </section>
         </main>
       )}
-      <Composer status={status} onRun={start} onStop={stop} />
     </div>
   );
 }

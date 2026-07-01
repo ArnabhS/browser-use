@@ -83,14 +83,21 @@ export const Viewport = memo(function Viewport({
   }, [hasFrame]);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-line bg-ink">
-      <div className="flex items-center gap-2 border-b border-line bg-raised px-3 py-2">
-        <span className={`h-2 w-2 rounded-full ${live ? "node-live bg-warn" : "bg-faint"}`} />
-        <span className="font-mono text-[10px] uppercase tracking-wider text-faint">
-          {live ? "Live" : "Browser"}
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-ink">
+      <div className="flex items-center gap-2.5 border-b border-line bg-raised px-4 py-2.5">
+        <span className="flex gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-line2" />
+          <span className="h-2.5 w-2.5 rounded-full bg-line2" />
+          <span className="h-2.5 w-2.5 rounded-full bg-line2" />
         </span>
-        <span className="ml-1 min-w-0 flex-1 truncate font-mono text-[12px] text-muted">
-          {pageUrl ?? ""}
+        <span className="ml-1 flex min-w-0 flex-1 items-center gap-2 rounded-md bg-ink/70 px-2.5 py-1">
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${live ? "node-live bg-warn" : "bg-faint"}`} />
+          <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-muted">
+            {pageUrl ?? "about:blank"}
+          </span>
+          {live && (
+            <span className="shrink-0 font-mono text-[9px] uppercase tracking-wider text-warn">Live</span>
+          )}
         </span>
       </div>
       <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black/40">
