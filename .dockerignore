@@ -1,0 +1,26 @@
+# Keep the build context (and image) small, and NEVER copy secrets or local venvs.
+**/.venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+.git
+.github
+
+# Secrets — the OpenRouter key lives in backend/.env and must stay out of the image.
+**/.env
+**/.env.local
+
+# Not needed by the backend image.
+frontend
+bridge-extension
+docs
+**/dist
+**/*.tsbuildinfo
+backend/runs
+
+# OS / editor cruft
+.DS_Store
+**/.idea
+**/.vscode
