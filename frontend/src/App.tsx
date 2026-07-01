@@ -74,7 +74,7 @@ export default function App() {
       ) : (
         <main className="flex min-h-0 flex-1 flex-col gap-3 p-3 lg:flex-row lg:gap-4 lg:p-4">
           {/* live browser — top on mobile, hero on the right on desktop */}
-          <section className="h-[38vh] min-h-0 shrink-0 lg:order-2 lg:h-auto lg:flex-1">
+          <section className="h-[38vh] min-h-0 min-w-0 shrink-0 lg:order-2 lg:h-auto lg:flex-1">
             <Viewport
               subscribeFrame={subscribeFrame}
               pageUrl={pageUrl}
@@ -84,7 +84,7 @@ export default function App() {
           </section>
 
           {/* conversation rail — task → timeline → composer as one continuous column */}
-          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-raised/30 lg:order-1 lg:w-[27rem] lg:flex-none">
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-raised/30 lg:order-1 lg:w-[27rem] lg:flex-none">
             <div className="scroll-area min-h-0 flex-1 overflow-y-auto px-5 pt-5">
               <Transcript
                 task={task}

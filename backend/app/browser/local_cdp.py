@@ -96,12 +96,20 @@ class LocalCDPSession:
         funnel_debug: bool = False,
         funnel_focus: str = "",
         start_url: str = "",
+        locale: str = "",
+        timezone: str = "",
+        geolocation: tuple[float, float] | None = None,
     ) -> None:
         self._headless = headless
         self._draw_overlay = draw_som_overlay
         # Home page the session opens on (empty = leave the blank tab). Production passes Google
         # from settings; kept empty by default so tests start hermetically on about:blank.
         self._start_url = start_url
+        # Locale/timezone/geolocation the launched context presents. Empty by default (tests get
+        # the host defaults); production passes India from settings. See _context_kwargs.
+        self._locale = locale
+        self._timezone = timezone
+        self._geolocation = geolocation
         # Diagnostics: when on, each observe() logs a per-stage funnel trace + a raw-DOM probe
         # for `funnel_focus`, so a "can see it, can't click it" element can be traced to the
         # exact stage that drops it (or shown to be never extracted at all).
@@ -128,6 +136,21 @@ class LocalCDPSession:
         self._streaming = False
         self._stream_page: Page | None = None
 
+    def _context_kwargs(self) -> dict:
+        """new_context() options for locale/timezone/geolocation, so pages see a consistent region
+        instead of the datacenter's default. This shapes navigator.language, the Intl timezone, and
+        the JS Geolocation API — it does NOT change the outbound IP (IP-based geo needs a proxy)."""
+        kw: dict = {}
+        if self._locale:
+            kw["locale"] = self._locale
+        if self._timezone:
+            kw["timezone_id"] = self._timezone
+        if self._geolocation:
+            lat, lng = self._geolocation
+            kw["geolocation"] = {"latitude": lat, "longitude": lng}
+            kw["permissions"] = ["geolocation"]  # grant so getCurrentPosition returns it, no prompt
+        return kw
+
     async def start(self) -> None:
         self._pw = await async_playwright().start()
         if self._connect_url:
@@ -149,7 +172,7 @@ class LocalCDPSession:
             self._page = await ctx.new_page()
         else:
             self._browser = await self._pw.chromium.launch(headless=self._headless)
-            ctx = await self._browser.new_context()
+            ctx = await self._browser.new_context(**self._context_kwargs())
             self._page = await ctx.new_page()
         if self._start_url:
             # Best-effort home page: a failed/slow load must never stop the session from starting.

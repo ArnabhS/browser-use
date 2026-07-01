@@ -40,6 +40,14 @@ async def build_running_app(sink):
     Returns (graph, emitter, memory, cleanup) where cleanup() stops the browser.
     """
     settings = get_settings()
+    geolocation: tuple[float, float] | None = None
+    if settings.browser_geolocation.strip():
+        try:
+            lat_s, lng_s = settings.browser_geolocation.split(",")
+            geolocation = (float(lat_s), float(lng_s))
+        except ValueError:
+            geolocation = None  # malformed "lat,long" — skip the geo override, don't crash
+
     session = LocalCDPSession(
         headless=settings.cdp_headless,
         draw_som_overlay=settings.use_vision,
@@ -47,6 +55,9 @@ async def build_running_app(sink):
         funnel_debug=settings.funnel_debug,
         funnel_focus=settings.funnel_focus,
         start_url=settings.start_url,
+        locale=settings.browser_locale,
+        timezone=settings.browser_timezone,
+        geolocation=geolocation,
     )
     await session.start()
     graph, emitter, store, _sink, memory = build_default_app(session=session, sink=sink)

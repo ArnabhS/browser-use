@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     # The page the browser opens on when a session starts (a home page). Google by default so the
     # live view shows something familiar the instant a run begins instead of a blank tab.
     start_url: str = "https://www.google.com"
+    # Locale / timezone / geolocation the launched browser presents (India by default). Shapes
+    # navigator.language, the Intl timezone, and the JS Geolocation API. NOTE: this does NOT change
+    # the server's outbound IP, so IP-based geolocation still reflects the host — use a proxy for
+    # true regional IP. Set browser_geolocation to "" to disable the geolocation override.
+    browser_locale: str = "en-IN"
+    browser_timezone: str = "Asia/Kolkata"
+    browser_geolocation: str = "19.0760,72.8777"  # "lat,long" (Mumbai); empty to disable
     runs_dir: str = "runs"
     cdp_headless: bool = False
     # When set (e.g. "http://localhost:9222"), attach to the user's running Chrome over CDP
