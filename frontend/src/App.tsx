@@ -48,7 +48,7 @@ function Hero({ onRun }: { onRun: (task: string) => void }) {
 }
 
 export default function App() {
-  const { status, task, timeline, streaming, question, result, error, hasFrame, pageUrl, subscribeFrame, start, answer, stop } =
+  const { status, task, timeline, streaming, question, result, error, waking, hasFrame, pageUrl, subscribeFrame, start, answer, stop } =
     useAgentRun();
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -60,7 +60,7 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col">
-      <Header status={status} version={PROTOCOL_VERSION} />
+      <Header status={status} version={PROTOCOL_VERSION} waking={waking} />
 
       {showEmpty ? (
         <main className="scroll-area flex-1 overflow-y-auto">
@@ -93,6 +93,7 @@ export default function App() {
                 question={question}
                 result={result}
                 status={status}
+                waking={waking}
                 onAnswer={answer}
               />
               {error && (

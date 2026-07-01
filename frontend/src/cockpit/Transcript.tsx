@@ -59,6 +59,7 @@ export const Transcript = memo(function Transcript({
   question,
   result,
   status,
+  waking,
   onAnswer,
 }: {
   task: string;
@@ -67,6 +68,7 @@ export const Transcript = memo(function Transcript({
   question: Question | null;
   result: RunResult | null;
   status: RunStatus;
+  waking?: boolean;
   onAnswer: (text: string) => void;
 }) {
   const warming = status === "running" && timeline.length === 0 && !streaming;
@@ -90,7 +92,11 @@ export const Transcript = memo(function Transcript({
         {warming && (
           <div className="rise relative border-l border-line pb-4 pl-7">
             <span className="node-live absolute -left-[5px] top-[7px] h-[9px] w-[9px] rounded-full bg-accent" />
-            <p className="text-[15px] text-muted">Opening the browser…</p>
+            <p className="text-[15px] text-muted">
+              {waking
+                ? "Waking the backend… free hosting sleeps when idle, so this can take up to a minute."
+                : "Opening the browser…"}
+            </p>
           </div>
         )}
         {question && <AskUserCard question={question} onAnswer={onAnswer} />}

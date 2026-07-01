@@ -20,7 +20,17 @@ const DOT: Record<RunStatus, string> = {
   error: "bg-warn",
 };
 
-export function Header({ status, version }: { status: RunStatus; version: string }) {
+export function Header({
+  status,
+  version,
+  waking,
+}: {
+  status: RunStatus;
+  version: string;
+  waking?: boolean;
+}) {
+  const label = waking ? "Waking" : LABEL[status];
+  const dot = waking ? "bg-warn node-live" : `${DOT[status]} ${status === "running" ? "node-live" : ""}`;
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-line px-5">
       <div className="flex items-center gap-2.5">
@@ -31,8 +41,8 @@ export function Header({ status, version }: { status: RunStatus; version: string
         <span className="text-sm text-faint">cockpit</span>
       </div>
       <div className="flex items-center gap-2.5">
-        <span className={`h-2 w-2 rounded-full ${DOT[status]} ${status === "running" ? "node-live" : ""}`} />
-        <span className="font-mono text-sm text-muted">{LABEL[status]}</span>
+        <span className={`h-2 w-2 rounded-full ${dot}`} />
+        <span className="font-mono text-sm text-muted">{label}</span>
         <span className="ml-2 font-mono text-xs text-faint">v{version}</span>
       </div>
     </header>
