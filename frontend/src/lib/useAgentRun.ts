@@ -20,8 +20,11 @@ export interface AgentRunState {
   question: Question | null;
   result: RunResult | null;
   error: string | null;
-  frame: string | null;
+  hasFrame: boolean;
   pageUrl: string | null;
+  /** Subscribe to raw base64 JPEG frames. Frames are pushed imperatively (not via React state)
+   *  so a high-FPS stream never re-renders the tree — the Viewport paints them to a canvas. */
+  subscribeFrame: (cb: (b64: string) => void) => () => void;
   start: (task: string) => void;
   answer: (text: string) => void;
   stop: () => void;
@@ -38,11 +41,21 @@ export function useAgentRun(): AgentRunState {
   const [question, setQuestion] = useState<Question | null>(null);
   const [result, setResult] = useState<RunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [frame, setFrame] = useState<string | null>(null);
+  const [hasFrame, setHasFrame] = useState<boolean>(false);
   const [pageUrl, setPageUrl] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const streamingRef = useRef<string>("");
+  const frameCbRef = useRef<((b64: string) => void) | null>(null);
+  const hasFrameRef = useRef<boolean>(false);
+  const pageUrlRef = useRef<string | null>(null);
+
+  const subscribeFrame = useCallback((cb: (b64: string) => void) => {
+    frameCbRef.current = cb;
+    return () => {
+      if (frameCbRef.current === cb) frameCbRef.current = null;
+    };
+  }, []);
 
   const closeSocket = useCallback(() => {
     if (wsRef.current) {
@@ -80,8 +93,10 @@ export function useAgentRun(): AgentRunState {
       setQuestion(null);
       setResult(null);
       setError(null);
-      setFrame(null);
+      setHasFrame(false);
+      hasFrameRef.current = false;
       setPageUrl(null);
+      pageUrlRef.current = null;
 
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
@@ -108,10 +123,24 @@ export function useAgentRun(): AgentRunState {
 
         if (event === "frame") {
           const b64 = data.data as string | undefined;
-          if (b64) setFrame(`data:image/jpeg;base64,${b64}`);
-          if (typeof data.url === "string") setPageUrl(data.url);
+          if (b64) {
+            frameCbRef.current?.(b64);
+            if (!hasFrameRef.current) {
+              hasFrameRef.current = true;
+              setHasFrame(true);
+            }
+          }
+          const url = data.url;
+          if (typeof url === "string" && url !== pageUrlRef.current) {
+            pageUrlRef.current = url;
+            setPageUrl(url);
+          }
         } else if (event === "observation") {
-          if (typeof data.url === "string") setPageUrl(data.url as string);
+          const url = data.url;
+          if (typeof url === "string" && url !== pageUrlRef.current) {
+            pageUrlRef.current = url;
+            setPageUrl(url);
+          }
         } else if (event === "stream") {
           streamingRef.current += (data.token as string | undefined) ?? "";
           setStreaming(streamingRef.current);
@@ -182,5 +211,5 @@ export function useAgentRun(): AgentRunState {
 
   useEffect(() => () => closeSocket(), [closeSocket]);
 
-  return { status, task, timeline, streaming, question, result, error, frame, pageUrl, start, answer, stop };
+  return { status, task, timeline, streaming, question, result, error, hasFrame, pageUrl, subscribeFrame, start, answer, stop };
 }

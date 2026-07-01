@@ -95,9 +95,13 @@ class LocalCDPSession:
         connect_url: str | None = None,
         funnel_debug: bool = False,
         funnel_focus: str = "",
+        start_url: str = "",
     ) -> None:
         self._headless = headless
         self._draw_overlay = draw_som_overlay
+        # Home page the session opens on (empty = leave the blank tab). Production passes Google
+        # from settings; kept empty by default so tests start hermetically on about:blank.
+        self._start_url = start_url
         # Diagnostics: when on, each observe() logs a per-stage funnel trace + a raw-DOM probe
         # for `funnel_focus`, so a "can see it, can't click it" element can be traced to the
         # exact stage that drops it (or shown to be never extracted at all).
@@ -147,6 +151,12 @@ class LocalCDPSession:
             self._browser = await self._pw.chromium.launch(headless=self._headless)
             ctx = await self._browser.new_context()
             self._page = await ctx.new_page()
+        if self._start_url:
+            # Best-effort home page: a failed/slow load must never stop the session from starting.
+            try:
+                await self._page.goto(self._start_url, wait_until="domcontentloaded", timeout=15000)
+            except Exception as exc:
+                logger.warning("start_url navigation to %s failed: %s", self._start_url, exc)
         self._registry.register(self._page)  # tab 0
         self._seen_pages = {self._page}
 

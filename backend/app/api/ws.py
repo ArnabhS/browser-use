@@ -46,6 +46,7 @@ async def build_running_app(sink):
         connect_url=settings.cdp_connect_url or None,
         funnel_debug=settings.funnel_debug,
         funnel_focus=settings.funnel_focus,
+        start_url=settings.start_url,
     )
     await session.start()
     graph, emitter, store, _sink, memory = build_default_app(session=session, sink=sink)

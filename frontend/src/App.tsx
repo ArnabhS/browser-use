@@ -41,7 +41,7 @@ function EmptyState({ onRun }: { onRun: (task: string) => void }) {
 }
 
 export default function App() {
-  const { status, task, timeline, streaming, question, result, error, frame, pageUrl, start, answer, stop } =
+  const { status, task, timeline, streaming, question, result, error, hasFrame, pageUrl, subscribeFrame, start, answer, stop } =
     useAgentRun();
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -62,12 +62,8 @@ export default function App() {
         </main>
       ) : (
         <main className="flex min-h-0 flex-1 flex-col gap-4 p-4 lg:flex-row">
-          {/* live browser view — the streaming panel */}
-          <section className="min-h-0 basis-1/2 lg:basis-3/5">
-            <Viewport frame={frame} pageUrl={pageUrl} status={status} />
-          </section>
-          {/* reasoning + action step log */}
-          <section className="scroll-area min-h-0 flex-1 overflow-y-auto lg:basis-2/5">
+          {/* reasoning + action step log — left */}
+          <section className="scroll-area min-h-0 flex-1 overflow-y-auto lg:flex-[2]">
             <div className="mx-auto max-w-[44rem] px-1 py-1">
               <Transcript
                 task={task}
@@ -88,6 +84,15 @@ export default function App() {
               )}
               <div ref={bottomRef} />
             </div>
+          </section>
+          {/* live browser view — right */}
+          <section className="min-h-0 flex-1 lg:flex-[3]">
+            <Viewport
+              subscribeFrame={subscribeFrame}
+              pageUrl={pageUrl}
+              status={status}
+              hasFrame={hasFrame}
+            />
           </section>
         </main>
       )}

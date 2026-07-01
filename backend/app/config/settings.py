@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     llm_max_retries: int = 3
     browser_backend: str = "fake"  # "fake" | "local_cdp"
     use_vision: bool = True
+    # The page the browser opens on when a session starts (a home page). Google by default so the
+    # live view shows something familiar the instant a run begins instead of a blank tab.
+    start_url: str = "https://www.google.com"
     runs_dir: str = "runs"
     cdp_headless: bool = False
     # When set (e.g. "http://localhost:9222"), attach to the user's running Chrome over CDP
