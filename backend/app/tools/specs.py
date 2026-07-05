@@ -56,7 +56,9 @@ class FindElements(BaseModel):
 
 
 class WaitFor(BaseModel):
-    """Wait for the page to settle for `seconds` before re-observing."""
+    """Pause `seconds` before re-observing. The engine ALREADY waits for normal page load/settle
+    after every action, so you do NOT need this routinely — only for content that keeps loading via
+    async requests after the page settled, a visible countdown, or a deliberate delay."""
     seconds: float = 1.0
 
 

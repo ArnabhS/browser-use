@@ -33,3 +33,11 @@ def test_prompt_scaffolds_reasoning_about_the_last_action():
     low = _text().lower()
     assert "reasoning" in low
     assert "last action" in low or "did the page change" in low or "assess" in low
+
+
+def test_prompt_says_engine_auto_settles_so_no_routine_waitfor():
+    # The engine already waits for load + settle after every action, so routine WaitFor calls are
+    # wasted turns. The prompt must say so, or the agent burns 5s/turn "letting the page load".
+    low = _text().lower()
+    assert "waitfor" in low
+    assert "already" in low and ("settle" in low or "loaded" in low or "finish loading" in low)
