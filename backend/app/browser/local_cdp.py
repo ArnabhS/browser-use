@@ -9,6 +9,7 @@ from browser_agent_contracts import ActionCall, ActionResult, Observation, Tab
 from playwright.async_api import Browser, Page, TimeoutError as PWTimeout, async_playwright
 
 from app.browser.screencast import OnFrame, ScreencastStreamer
+from app.browser.som_overlay import render_som
 from app.browser.tab_registry import TabRegistry
 from app.observation.extract import extract, probe_dom
 from app.observation.funnel.pipeline import run_funnel
@@ -67,6 +68,15 @@ _HREF_AT_JS = """
 """
 
 
+_TARGET_BLANK_JS = """
+([cx, cy]) => {
+  let el = document.elementFromPoint(cx, cy);
+  const a = el && (el.tagName === 'A' ? el : el.closest('a'));
+  return !!(a && a.target === '_blank');
+}
+"""
+
+
 def _navigable_href(href: str | None, current_url: str) -> str | None:
     """A hyperlink worth following as a click fallback: an http(s) target that is a different page
     than where we are (ignoring the #fragment). Rejects javascript:/mailto:/tel:, empty hrefs, and
@@ -86,26 +96,6 @@ _VIEWPORT_JS = (
     "() => [ (window.visualViewport && window.visualViewport.width) || window.innerWidth,"
     " (window.visualViewport && window.visualViewport.height) || window.innerHeight ]"
 )
-
-_SOM_OVERLAY_JS = """
-(boxes) => {
-  const old = document.getElementById('__som_overlay__'); if (old) old.remove();
-  const c = document.createElement('div');
-  c.id = '__som_overlay__';
-  c.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483647';
-  const colors = ['#E6194B','#3CB44B','#4363D8','#F58231','#911EB4','#008080','#F032E6','#BFEF45'];
-  for (const b of boxes) {
-    const idx=b[0], x=b[1], y=b[2], w=b[3], h=b[4], col=colors[idx % colors.length];
-    const box = document.createElement('div');
-    box.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:${w}px;height:${h}px;border:2px solid ${col};box-sizing:border-box`;
-    const lab = document.createElement('div');
-    lab.textContent = idx;
-    lab.style.cssText = `position:absolute;left:${x}px;top:${Math.max(0,y-14)}px;background:${col};color:#fff;font:bold 11px monospace;padding:0 3px;line-height:14px`;
-    c.appendChild(box); c.appendChild(lab);
-  }
-  document.body.appendChild(c);
-}
-"""
 
 
 # Stealth: strip the obvious automation tells so bot-walls (PerimeterX/DataDome) serve the real
@@ -177,6 +167,7 @@ class LocalCDPSession:
         self._registry = TabRegistry()  # stable per-session tab ids the agent reasons about
         self._cdp = None               # cached CDP session for the active page (scroll gestures)
         self._cdp_page: Page | None = None
+        self._dpr: float | None = None  # cached device pixel ratio for server-side SoM compositing
         # Live view: a best-effort CDP screencast of the active page, pushed out through on_frame
         # (the composition root wires it to the event emitter). Idle until start_stream().
         self.on_frame: OnFrame | None = None
@@ -305,15 +296,28 @@ class LocalCDPSession:
         observation.tabs = await self._tab_snapshot()
         if focus:
             await self._log_dom_probe(focus, meta.url)
-        if self._draw_overlay and self.index_boxes:
-            await self.page.evaluate(_SOM_OVERLAY_JS, [[i, *b] for i, b in self.index_boxes.items()])
+        # Capture a CLEAN frame — never inject the marks into the live DOM (that flashed the boxes in
+        # the user's real browser and cost two extra JS round-trips). The Set-of-Marks are drawn onto
+        # the image server-side instead, so the model still gets a marked screenshot (as JPEG) while
+        # the page stays untouched.
+        raw = await self._safe_screenshot()
+        if raw and self._draw_overlay and self.index_boxes:
             try:
-                self.latest_screenshot = await self._safe_screenshot()
-            finally:  # remove the overlay even if the screenshot failed — never leak it onto the page
-                await self.page.evaluate("() => { const o = document.getElementById('__som_overlay__'); if (o) o.remove(); }")
-        else:
-            self.latest_screenshot = await self._safe_screenshot()
+                raw = render_som(raw, self.index_boxes, await self._device_pixel_ratio())
+            except Exception as e:  # compositing must never break observe
+                logger.warning("SoM compositing failed (%s) — sending clean frame", e)
+        self.latest_screenshot = raw
         return observation
+
+    async def _device_pixel_ratio(self) -> float:
+        """CDP captures at the device pixel ratio, but SoM boxes are in CSS px — this scales them to
+        match. Cached: DPR is effectively constant for a session."""
+        if self._dpr is None:
+            try:
+                self._dpr = float(await self.page.evaluate("() => window.devicePixelRatio")) or 1.0
+            except Exception:
+                self._dpr = 1.0
+        return self._dpr
 
     _SCREENSHOT_TIMEOUT = 3.0
 
@@ -368,12 +372,15 @@ class LocalCDPSession:
             cx, cy = geo
             before = set(self.page.context.pages)
             url_before = self.page.url
+            # Only a link that opens a new window is worth polling for after the click — check first
+            # so a plain click doesn't pay the tab-wait (see _adopt_new_tab).
+            expect_tab = name == "click" and bool(await self.page.evaluate(_TARGET_BLANK_JS, [cx, cy]))
             await self.page.mouse.click(cx, cy)
             if name == "type":
                 await self.page.keyboard.type(str(args.get("text", "")))
             await self._settle()
             # Only a click can open a new tab; typing into a field never does — skip the wait.
-            followed = await self._adopt_new_tab(before) if name == "click" else False
+            followed = await self._adopt_new_tab(before, expect_tab=expect_tab) if name == "click" else False
             tab = " (followed new tab)" if followed else ""
             # Click-doesn't-navigate fallback: some links (search-result cards, JS-routed anchors
             # that preventDefault) swallow a trusted click and never move the page, so the agent
@@ -401,7 +408,7 @@ class LocalCDPSession:
             await asyncio.sleep(duration)
             await self.page.mouse.up()
             await self._settle()
-            tab = " (followed new tab)" if await self._adopt_new_tab(before) else ""
+            tab = " (followed new tab)" if await self._adopt_new_tab(before, expect_tab=False) else ""
             return ActionResult(
                 success=True, reason=f"long-pressed [{args['index']}] for {int(duration * 1000)}ms{tab}"
             )
@@ -439,7 +446,7 @@ class LocalCDPSession:
             before = set(self.page.context.pages)
             await self.page.keyboard.press(str(args["key"]))
             await self._settle()
-            tab = " (followed new tab)" if await self._adopt_new_tab(before) else ""
+            tab = " (followed new tab)" if await self._adopt_new_tab(before, expect_tab=False) else ""
             return ActionResult(success=True, reason=f"pressed {args['key']}{tab}")
         if name == "clear":
             geo = self.index_map.get(int(args["index"]))
@@ -510,23 +517,29 @@ class LocalCDPSession:
             return ActionResult(success=True, reason=f"closed tab {args['target_id']}")
         return ActionResult(success=False, reason=f"unsupported action {name}")
 
-    async def _adopt_new_tab(self, before: set) -> bool:
+    async def _adopt_new_tab(self, before: set, *, expect_tab: bool = True) -> bool:
         """If the last action opened a new tab (product/search result in a new window, via
         target=_blank or window.open), make it the active page so the next observation reflects
-        what the user would now be looking at — instead of the unchanged original tab."""
+        what the user would now be looking at — instead of the unchanged original tab.
+
+        `expect_tab` gates the poll: most clicks open no tab, and polling 3s on every one was a flat
+        per-click tax (profiled 3.03s). When we don't expect a tab we only take the immediate check
+        (catches a synchronous window.open) and return — any straggler is still picked up by the
+        lazy `_follow_unseen_tab` on the very next observe."""
         ctx = self.page.context
 
         def _fresh():
             return [p for p in ctx.pages if p not in before and not p.is_closed()]
 
         opened = _fresh()
-        # The tab can take ~1–3s to register (it's a fresh navigation) — poll the live page
-        # list (not an event, so we can't miss one fired in the gap). Early-exits the instant a
-        # tab appears, so tab-opening clicks pay only the real open time, not the whole window.
-        for _ in range(30):
-            if opened:
-                break
-            await asyncio.sleep(0.1)
+        # Only a link we know opens a new window is worth waiting on — a fresh cross-origin tab can
+        # take a beat to register. Early-exits the instant it appears, so real tab-opens pay only
+        # the open time, not the whole window.
+        budget = 30 if expect_tab else 0  # 30×0.05s = 1.5s vs 0
+        waited = 0
+        while not opened and waited < budget:
+            await asyncio.sleep(0.05)
+            waited += 1
             opened = _fresh()
         if not opened:
             return False
@@ -546,8 +559,12 @@ class LocalCDPSession:
             await self.page.wait_for_load_state("load", timeout=bound * 1000)
         except Exception:
             pass
+        # networkidle is a best-effort tail. Ad/analytics-heavy sites NEVER reach it, so this used
+        # to burn the full 2s on every single action (a flat per-action tax). The load event above
+        # is the real settle signal; keep only a short idle grace, and extract() retries if a
+        # navigation is still in flight when we observe.
         try:
-            await self.page.wait_for_load_state("networkidle", timeout=2000)
+            await self.page.wait_for_load_state("networkidle", timeout=700)
         except Exception:
             pass
 

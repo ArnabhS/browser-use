@@ -15,6 +15,7 @@ def build_chat_model(settings: Settings):
         temperature=settings.llm_temperature,
         stream_usage=True,
         max_retries=0,  # OpenRouterLLMClient owns retries
+        timeout=settings.llm_request_timeout,  # bound OpenRouter stalls; retry recovers
     )
     # Browser agent: ONE action per turn — the page mutates and SoM indices are rebuilt every observe(),
     # so batching effect actions against a single index_map would click stale coordinates.

@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     max_steps: int = 100
     llm_temperature: float = 0.2
     llm_max_retries: int = 3
+    # Per-request cap so an occasional OpenRouter stall (observed up to 70s) can't hang a whole turn —
+    # normal gemini/sonnet calls return in ~2-3s, so this only trips on a genuine hang, and the
+    # client's own retry then recovers on a fresh request.
+    llm_request_timeout: float = 45.0
     # "fake" (tests) | "local_cdp" (server-side Chromium) | "extension_bridge" (the user's OWN
     # Chrome, driven via the bridge extension over /ws/bridge — real IP, real logins).
     browser_backend: str = "fake"
