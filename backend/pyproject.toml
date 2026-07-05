@@ -16,6 +16,8 @@ dependencies = [
   "aiofiles>=24.1",
   "playwright>=1.48",
   "browser-agent-contracts",
+  "cdp-use>=1.4.5",
+  "cryptography>=49.0.0",
 ]
 
 [dependency-groups]

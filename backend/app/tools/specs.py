@@ -21,6 +21,12 @@ class TypeText(BaseModel):
     text: str
 
 
+class LongPress(BaseModel):
+    """Press and HOLD the element at the given index for `duration_ms`, then release — for touch-style long-press interactions: press-and-hold context menus, 'hold to confirm' buttons, or drag/reorder handles that only activate after a sustained press. Use a normal Click for everything else."""
+    index: int
+    duration_ms: int = 800
+
+
 class Scroll(BaseModel):
     """Scroll up or down by `amount` viewport-heights. Set `index` to scroll the scrollable box that element sits in (a modal, chat pane, or inner list) instead of the whole page."""
     direction: Literal["up", "down"]
@@ -31,6 +37,22 @@ class Scroll(BaseModel):
 class Extract(BaseModel):
     """Read text/answer a question from the current page without acting."""
     query: str
+
+
+class SearchPage(BaseModel):
+    """Search the page's visible text for a pattern (like grep) — a fast, decisive check for whether some text is on the page WITHOUT scrolling blindly. Returns matching snippets with surrounding context. Prefer this (and Extract) over scrolling around to look for known text."""
+    pattern: str
+    regex: bool = False
+    case_sensitive: bool = False
+    max_results: int = 25
+
+
+class FindElements(BaseModel):
+    """Query the DOM by CSS selector (like `find`) and return matching elements' tag, chosen attributes, and text — to check page structure or count matches. Read-only; does not act."""
+    selector: str
+    attributes: list[str] | None = None
+    max_results: int = 50
+    include_text: bool = True
 
 
 class WaitFor(BaseModel):
@@ -107,14 +129,14 @@ class Complete(BaseModel):
 
 
 TOOL_SPECS: list[type[BaseModel]] = [
-    Navigate, Click, TypeText, Scroll, Extract, WaitFor,
+    Navigate, Click, LongPress, TypeText, Scroll, Extract, SearchPage, FindElements, WaitFor,
     PressKey, Clear, SelectOption, NewTab, SwitchTab, CloseTab, ObserveTab, OpenInNewTab,
     Remember, Recall, SetPlan, AskUser, Complete,
 ]
 
-BROWSER_TOOLS = {"Navigate", "Click", "TypeText", "Scroll", "Extract", "WaitFor",
-                 "PressKey", "Clear", "SelectOption", "NewTab", "SwitchTab", "CloseTab",
-                 "ObserveTab", "OpenInNewTab"}
+BROWSER_TOOLS = {"Navigate", "Click", "LongPress", "TypeText", "Scroll", "Extract", "SearchPage",
+                 "FindElements", "WaitFor", "PressKey", "Clear", "SelectOption", "NewTab",
+                 "SwitchTab", "CloseTab", "ObserveTab", "OpenInNewTab"}
 MEMORY_TOOLS = {"Remember", "Recall"}
 CONTROL_TOOLS = {"SetPlan", "Complete", "AskUser"}
 

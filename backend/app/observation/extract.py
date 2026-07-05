@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from app.observation.raw import PageMeta, RawElement
 
 EXTRACT_JS = r"""
@@ -31,11 +33,35 @@ EXTRACT_JS = r"""
     if (hasReactClickHandler(el)) return true;
     return false;
   };
-  const name = (el) => (
-    el.getAttribute('aria-label') || el.getAttribute('placeholder') ||
-    el.getAttribute('alt') || el.getAttribute('title') ||
-    (el.innerText || '').trim() || el.value || ''
-  ).trim().replace(/\s+/g, ' ').slice(0, 200);
+  // The VISIBLE text is ground truth for the agent (it cross-references the screenshot / SoM
+  // overlay). Prefer it whenever it's a real textual label — this beats a MISLEADING aria-label,
+  // e.g. quashbugs.com's header <a aria-label="Get Early Access To Automate">Book a Demo</a>, where
+  // trusting aria-label made the agent unable to find (or click) the button it was told to press.
+  // Fall back to aria-label/placeholder/alt/title/value only for icon-only, glyph, or empty controls
+  // (innerText has no word characters).
+  const name = (el) => {
+    const clean = (s) => (s || '').trim().replace(/\s+/g, ' ');
+    // Form fields are usually named by an ASSOCIATED <label> (for=… or wrapping) — HubSpot et al.
+    // set no placeholder/aria-label at all, which left every field a blank `input ""`.
+    const labelText = (el) => {
+      try {
+        if (el.labels && el.labels.length) return clean(el.labels[0].innerText);
+        const ids = el.getAttribute('aria-labelledby');
+        if (ids) {
+          return clean(ids.split(/\s+/)
+            .map((id) => { const n = document.getElementById(id); return n ? n.innerText : ''; })
+            .join(' '));
+        }
+      } catch (e) { /* labels not supported on this element */ }
+      return '';
+    };
+    const txt = clean(el.innerText);
+    const label = /[a-z0-9]/i.test(txt)
+      ? txt
+      : (clean(el.getAttribute('aria-label')) || labelText(el) || clean(el.getAttribute('placeholder')) ||
+         clean(el.getAttribute('alt')) || clean(el.getAttribute('title')) || txt || clean(el.value));
+    return label.slice(0, 200);
+  };
   // An element is occluded only if EVERY sampled point of its box is blocked by an unrelated
   // element that is a genuine COVERING SURFACE (a modal/overlay enclosing it, ≥2× its area).
   // A single centre point + an "anything not self/child" rule (the old logic) culled visible,
@@ -69,22 +95,28 @@ EXTRACT_JS = r"""
   };
   const out = [];
   for (const el of document.querySelectorAll('*')) {
-    if (!isInteractive(el)) continue;
-    const r = el.getBoundingClientRect();
-    const s = getComputedStyle(el);
-    const visible = s.display !== 'none' && s.visibility !== 'hidden' &&
-                    parseFloat(s.opacity || '1') > 0 && r.width > 0 && r.height > 0;
-    const inViewport = r.bottom > 0 && r.right > 0 &&
-                       r.top < innerHeight && r.left < innerWidth;
-    const occluded = isOccluded(el, r);
-    out.push({
-      tag: el.tagName.toLowerCase(),
-      role: el.getAttribute('role') || el.tagName.toLowerCase(),
-      name: name(el),
-      value: (el.value || '').slice(0, 200) || null,
-      x: r.left, y: r.top, width: r.width, height: r.height,
-      visible, in_viewport: inViewport, occluded,
-    });
+    // Anti-bot pages (PerimeterX — e.g. Skyscanner's captcha) plant elements with a nuked
+    // prototype chain: every property reads undefined and naive crawlers crash. One hostile
+    // element must never kill the whole observe — skip it and keep extracting.
+    try {
+      if (typeof el.tagName !== 'string') continue;
+      if (!isInteractive(el)) continue;
+      const r = el.getBoundingClientRect();
+      const s = getComputedStyle(el);
+      const visible = s.display !== 'none' && s.visibility !== 'hidden' &&
+                      parseFloat(s.opacity || '1') > 0 && r.width > 0 && r.height > 0;
+      const inViewport = r.bottom > 0 && r.right > 0 &&
+                         r.top < innerHeight && r.left < innerWidth;
+      const occluded = isOccluded(el, r);
+      out.push({
+        tag: el.tagName.toLowerCase(),
+        role: el.getAttribute('role') || el.tagName.toLowerCase(),
+        name: name(el),
+        value: (el.value || '').slice(0, 200) || null,
+        x: r.left, y: r.top, width: r.width, height: r.height,
+        visible, in_viewport: inViewport, occluded,
+      });
+    } catch (e) { /* pathological element — skip, never fatal */ }
   }
   return {
     url: location.href, title: document.title,
@@ -169,9 +201,68 @@ def _is_navigation_error(exc: Exception) -> bool:
     return any(m in msg for m in _NAV_MARKERS)
 
 
+# Child-frame extraction guards: skip tracking pixels / hidden ad frames, and cap the frame count so
+# an ad-riddled page can't stall observe.
+_MAX_CHILD_FRAMES = 12
+_MIN_FRAME_SIZE = 40.0
+_FRAME_EVAL_TIMEOUT_S = 5.0
+
+
+async def _extract_child_frames(page, meta: PageMeta) -> list[RawElement]:
+    """Run EXTRACT_JS inside every real-sized child iframe (HubSpot/Typeform/Stripe embeds — e.g.
+    the quashbugs.com contact form) and merge the results, offsetting each element by the iframe's
+    position so its coordinates are main-viewport coordinates. Trusted clicks/typing then land
+    inside the frame with no further routing — the browser does it. Works cross-origin: Playwright
+    evaluates per-frame over CDP, and frame_element().bounding_box() is main-frame-relative (so
+    nested frames need no cumulative math). Best-effort per frame: a broken/mid-navigation frame is
+    skipped, never fatal."""
+    out: list[RawElement] = []
+    extracted = 0
+    frames = getattr(page, "frames", None) or []  # fakes/tests may have no frame tree
+    for frame in frames:
+        if frame == page.main_frame or frame.is_detached():
+            continue
+        if extracted >= _MAX_CHILD_FRAMES:
+            break
+        try:
+            el = await frame.frame_element()
+            box = await el.bounding_box()  # None when the iframe is hidden (display:none etc.)
+        except Exception:
+            continue
+        if not box or box["width"] < _MIN_FRAME_SIZE or box["height"] < _MIN_FRAME_SIZE:
+            continue
+        try:
+            data = await asyncio.wait_for(frame.evaluate(EXTRACT_JS), timeout=_FRAME_EVAL_TIMEOUT_S)
+        except Exception:
+            continue
+        extracted += 1
+        dx, dy = box["x"], box["y"]
+        # Sites shrink embeds with CSS transform: scale(…) — bounding_box() is the RENDERED box but
+        # in-frame coords are unscaled (frame innerWidth stays at layout size), so map through the
+        # ratio. Unscaled frames give ratio 1.0. (quashbugs.com renders its HubSpot form at ~0.85;
+        # without this, clicks landed ~40px off and focused the wrong field.)
+        fw, fh = data["viewport_width"], data["viewport_height"]
+        sx = box["width"] / fw if fw else 1.0
+        sy = box["height"] / fh if fh else 1.0
+        for e in data["elements"]:
+            e["x"] = e["x"] * sx + dx
+            e["y"] = e["y"] * sy + dy
+            e["width"] *= sx
+            e["height"] *= sy
+            # Keep the frame-local verdict (an element scrolled out INSIDE the iframe is clipped and
+            # unreachable at these coords) AND require the offset box to intersect the top viewport.
+            e["in_viewport"] = bool(e["in_viewport"]) and (
+                e["x"] + e["width"] > 0 and e["y"] + e["height"] > 0
+                and e["x"] < meta.viewport_width and e["y"] < meta.viewport_height
+            )
+            out.append(RawElement(**e))
+    return out
+
+
 async def extract(page, *, retries: int = 3) -> tuple[list[RawElement], PageMeta]:
-    """Run the DOM funnel. Resilient to navigations (e.g. Enter submits a search → the page
-    navigates mid-evaluate): on a destroyed context, wait for the new page to load and retry."""
+    """Run the DOM funnel over the main frame + every real-sized child iframe. Resilient to
+    navigations (e.g. Enter submits a search → the page navigates mid-evaluate): on a destroyed
+    context, wait for the new page to load and retry."""
     last_exc: Exception | None = None
     for attempt in range(retries):
         # Best-effort: don't evaluate against a half-built document.
@@ -196,5 +287,6 @@ async def extract(page, *, retries: int = 3) -> tuple[list[RawElement], PageMeta
             viewport_width=data["viewport_width"], viewport_height=data["viewport_height"],
             scroll_x=data["scroll_x"], scroll_y=data["scroll_y"],
         )
+        raw.extend(await _extract_child_frames(page, meta))
         return raw, meta
     raise last_exc if last_exc else RuntimeError("extract failed")

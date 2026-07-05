@@ -32,6 +32,10 @@ class AgentState(BaseModel):
     step: int = 0
     nudge_count: int = 0
     stuck_count: int = 0
+    # Rolling window of recent NON-repeatable action signatures — for action-repetition loop
+    # detection (catches clear/retype-style loops that the page-signature stuck_count misses because
+    # the page superficially changes). Replaced each act step; see act/reason nodes.
+    recent_actions: list[str] = Field(default_factory=list)
     finished: bool = False
     success: bool | None = None
     reason: str = ""

@@ -9,8 +9,11 @@ def format_observation(obs: Observation) -> str:
     if obs.title:
         header += f" — {obs.title}"
     lines = [header, "Interactable elements:"]
+    any_new = False
     for el in obs.elements:
-        label = f"[{el.index}] {el.role}"
+        star = "*" if el.is_new else ""
+        any_new = any_new or el.is_new
+        label = f"{star}[{el.index}] {el.role}"
         if el.name:
             label += f' "{el.name}"'
         if el.value:
@@ -18,6 +21,8 @@ def format_observation(obs: Observation) -> str:
         lines.append(label)
     if not obs.elements:
         lines.append("(none)")
+    if any_new:
+        lines.append("(* = appeared since your last action)")
     if obs.dropped_count:
         lines.append(f"({obs.dropped_count} lower-priority elements hidden — scroll to reveal)")
     if len(obs.tabs) > 1:

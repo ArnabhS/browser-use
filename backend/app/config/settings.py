@@ -12,7 +12,9 @@ class Settings(BaseSettings):
     max_steps: int = 100
     llm_temperature: float = 0.2
     llm_max_retries: int = 3
-    browser_backend: str = "fake"  # "fake" | "local_cdp"
+    # "fake" (tests) | "local_cdp" (server-side Chromium) | "extension_bridge" (the user's OWN
+    # Chrome, driven via the bridge extension over /ws/bridge — real IP, real logins).
+    browser_backend: str = "fake"
     use_vision: bool = True
     # The page the browser opens on when a session starts (a home page). Google by default so the
     # live view shows something familiar the instant a run begins instead of a blank tab.
@@ -24,8 +26,22 @@ class Settings(BaseSettings):
     browser_locale: str = "en-IN"
     browser_timezone: str = "Asia/Kolkata"
     browser_geolocation: str = "19.0760,72.8777"  # "lat,long" (Mumbai); empty to disable
+    # Route the browser through a proxy so sites see the proxy's IP (the ONLY way to change
+    # IP-based geolocation, e.g. to get Indian Amazon/Google results from a foreign server).
+    # Full URL incl. optional credentials, e.g. "http://user:pass@host:port" or "socks5://host:port".
+    # Empty = direct connection (default). Supply an Indian proxy to get an Indian IP.
+    browser_proxy: str = ""
     runs_dir: str = "runs"
+    # Run the browser headful — the load-bearing anti-bot-detection lever (headless is what
+    # PerimeterX/DataDome fingerprint). False = headful. On the server we still need a display, so
+    # the Docker image runs under xvfb. Set true only for hermetic CI where blocking doesn't matter.
     cdp_headless: bool = False
+    # Strip obvious automation tells (navigator.webdriver, --enable-automation) on the launched
+    # browser. Cheap defense-in-depth layered on top of headful. Disable to debug raw Playwright.
+    stealth: bool = True
+    # Auto-load reliability extensions (uBlock Origin Lite + a cookie-banner killer) on the raw-CDP
+    # backend (browser_backend="cdp"). Best-effort: a failed download just starts without them.
+    load_extensions: bool = True
     # When set (e.g. "http://localhost:9222"), attach to the user's running Chrome over CDP
     # instead of launching a fresh Chromium. Empty = launch a throwaway browser.
     cdp_connect_url: str = ""

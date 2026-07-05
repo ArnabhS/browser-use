@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 STATUS = "status"
 REASONING = "reasoning"
+EVALUATION = "evaluation"  # the model's self-assessment of its previous action (P0-3)
 TOOL_CALL = "tool_call"
 OBSERVATION = "observation"
 USAGE = "usage"

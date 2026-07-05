@@ -4,12 +4,13 @@ from app.tools.specs import TOOL_SPECS, tool_descriptions, Click, Complete, AskU
 def test_specs_have_expected_names():
     names = {s.__name__ for s in TOOL_SPECS}
     assert names == {
-        "Navigate", "Click", "TypeText", "Scroll", "Extract", "WaitFor",
+        "Navigate", "Click", "LongPress", "TypeText", "Scroll", "Extract", "SearchPage",
+        "FindElements", "WaitFor",
         "PressKey", "Clear", "SelectOption", "NewTab", "SwitchTab", "CloseTab",
         "ObserveTab", "OpenInNewTab",
         "Remember", "Recall", "SetPlan", "AskUser", "Complete",
     }
-    assert len(names) == 19
+    assert len(names) == 22
 
 
 def test_ask_user_spec():

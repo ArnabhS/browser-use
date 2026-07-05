@@ -22,5 +22,6 @@ class StepRecord(BaseModel):
     error_code: ErrorCode | None = None
     input_tokens: int = 0
     output_tokens: int = 0
+    cached_tokens: int = 0  # input tokens served from the prompt cache (billed ~0.25x)
     latency_ms: float = 0.0
     model: str = ""

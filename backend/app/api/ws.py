@@ -7,31 +7,19 @@ from datetime import datetime, timezone
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app.agent.demo import run
+from app.api.run_manager import RunManager
 from app.browser.local_cdp import LocalCDPSession
 from app.config.container import build_default_app
 from app.config.settings import get_settings
+from app.events.protocol import AgentEvent
+
+# Process-level registry so a run outlives the cockpit socket viewing it (spec §5). A cockpit
+# refresh detaches the view; the run — and its browser — keep going and can be re-attached.
+RUNS = RunManager()
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-class WebSocketSink:
-    """EventSink that forwards every AgentEvent to a WebSocket as JSON.
-
-    Serialized with a lock: the agent run task and the screencast frame task both write this same
-    socket, and Starlette's WebSocket.send is not safe for concurrent coroutines."""
-
-    def __init__(self, ws: WebSocket) -> None:
-        self._ws = ws
-        self._lock = asyncio.Lock()
-
-    async def emit(self, event) -> None:
-        try:
-            async with self._lock:
-                await self._ws.send_json(event.model_dump())
-        except Exception:
-            pass  # socket closing mid-emit — drop
 
 
 async def build_running_app(sink):
@@ -40,6 +28,26 @@ async def build_running_app(sink):
     Returns (graph, emitter, memory, cleanup) where cleanup() stops the browser.
     """
     settings = get_settings()
+
+    if settings.browser_backend == "extension_bridge":
+        # Drive the USER'S OWN Chrome via the extension. No server-side browser to launch — but the
+        # extension must already be connected (spec §6), else fail clearly rather than hang.
+        from app.browser.extension_bridge import HUB, ExtensionBridgeSession
+
+        if not HUB.connected:
+            raise RuntimeError(
+                "No browser connected. Open the extension and click 'Control this tab', then start again."
+            )
+        session = ExtensionBridgeSession(HUB)
+        await session.start()
+        graph, emitter, store, _sink, memory = build_default_app(session=session, sink=sink)
+        session.on_frame = emitter.emit_frame  # extension frames → cockpit live view
+
+        async def cleanup() -> None:
+            await session.stop()
+
+        return graph, emitter, memory, cleanup
+
     geolocation: tuple[float, float] | None = None
     if settings.browser_geolocation.strip():
         try:
@@ -47,6 +55,38 @@ async def build_running_app(sink):
             geolocation = (float(lat_s), float(lng_s))
         except ValueError:
             geolocation = None  # malformed "lat,long" — skip the geo override, don't crash
+
+    if settings.browser_backend == "cdp":
+        # Raw-CDP server-side browser (Playwright-free). Screencast live-view is a follow-up increment;
+        # the funnel, full action vocabulary, and locale/geo emulation are in place.
+        from app.browser.cdp_session import CDPSession
+
+        session = CDPSession(
+            headless=settings.cdp_headless,
+            stealth=settings.stealth,
+            draw_som_overlay=settings.use_vision,
+            start_url=settings.start_url,
+            proxy=settings.browser_proxy,
+            connect_url=settings.cdp_connect_url or None,
+            locale=settings.browser_locale,
+            timezone=settings.browser_timezone,
+            geolocation=geolocation,
+            funnel_debug=settings.funnel_debug,
+            funnel_focus=settings.funnel_focus,
+            load_extensions=settings.load_extensions,
+        )
+        await session.start()
+        graph, emitter, store, _sink, memory = build_default_app(session=session, sink=sink)
+        session.on_frame = emitter.emit_frame
+        try:
+            await session.start_stream()
+        except Exception:
+            pass
+
+        async def cleanup() -> None:
+            await session.stop()
+
+        return graph, emitter, memory, cleanup
 
     session = LocalCDPSession(
         headless=settings.cdp_headless,
@@ -58,6 +98,8 @@ async def build_running_app(sink):
         locale=settings.browser_locale,
         timezone=settings.browser_timezone,
         geolocation=geolocation,
+        proxy=settings.browser_proxy,
+        stealth=settings.stealth,
     )
     await session.start()
     graph, emitter, store, _sink, memory = build_default_app(session=session, sink=sink)
@@ -86,98 +128,98 @@ async def build_running_app(sink):
     return graph, emitter, memory, cleanup
 
 
+async def _run_graph(rs, graph, emitter, memory, task_text: str, thread_id: str) -> None:
+    """Drive the graph to completion, emitting lifecycle events INTO the run's fanout sink (so they
+    are buffered and replay to a reconnecting cockpit). Never tears the browser down here — that is
+    the job of `stop` or GC, so a refresh within the TTL can still replay the final state."""
+    try:
+        final = await run(
+            graph,
+            task=task_text,
+            thread_id=thread_id,
+            answer_provider=rs.answer_provider,
+            emitter=emitter,
+            memory=memory,
+        )
+        await rs.sink.emit(
+            AgentEvent(event="run_complete", data={"success": final.success, "reason": final.reason})
+        )
+    except asyncio.CancelledError:
+        raise  # stop() cancelled us; it already emitted the stopped run_complete
+    except Exception as exc:
+        await rs.sink.emit(AgentEvent(event="error", data={"message": str(exc)}))
+        await rs.sink.emit(AgentEvent(event="run_complete", data={}))
+    finally:
+        RUNS.mark_done(thread_id, {})
+
+
 async def ws_run(websocket: WebSocket) -> None:
     await websocket.accept()
-    answer_queue: asyncio.Queue[str] = asyncio.Queue()
+    viewing: str | None = None  # thread_id this socket is currently attached to
 
-    async def answer_provider(q: dict) -> str:
-        return await answer_queue.get()
+    async def sender(payload: dict) -> None:
+        await websocket.send_json(payload)
 
-    run_task = None
-    cleanup = None
+    async def _detach_current() -> None:
+        if viewing:
+            prev = RUNS.get(viewing)
+            if prev is not None:
+                await prev.detach(sender)
 
     try:
         while True:
             msg = await websocket.receive_json()
             mtype = msg.get("type")
 
-            if mtype == "answer":
-                answer_queue.put_nowait(msg.get("answer", ""))
-
-            elif mtype == "start" and (run_task is None or run_task.done()):
+            if mtype == "start":
+                await RUNS.gc()  # opportunistic: free stale terminal runs whenever there's activity
                 task_text = msg.get("task", "")
                 thread_id = msg.get("thread_id") or f"ws-{uuid.uuid4().hex[:8]}"
+                await _detach_current()
+                rs = await RUNS.create(thread_id)
+                viewing = thread_id
+                await rs.attach(sender)  # empty buffer at start; goes live for this run
                 try:
-                    graph, emitter, memory, cleanup = await build_running_app(WebSocketSink(websocket))
+                    graph, emitter, memory, cleanup = await build_running_app(rs.sink)
                 except Exception as exc:  # browser failed to start — tell the cockpit, don't crash
-                    await websocket.send_json(
-                        {"event": "error", "data": {"message": f"Could not start the browser: {exc}"}, "ts": _now()}
+                    await rs.sink.emit(
+                        AgentEvent(event="error", data={"message": f"Could not start the browser: {exc}"})
                     )
-                    await websocket.send_json({"event": "run_complete", "data": {}, "ts": _now()})
+                    await rs.sink.emit(AgentEvent(event="run_complete", data={}))
+                    RUNS.mark_done(thread_id, {})
                     continue
+                task = asyncio.create_task(
+                    _run_graph(rs, graph, emitter, memory, task_text, thread_id)
+                )
+                rs.bind(task, cleanup)
 
-                async def _do_run(
-                    graph=graph,
-                    emitter=emitter,
-                    memory=memory,
-                    cleanup=cleanup,
-                    task_text=task_text,
-                    thread_id=thread_id,
-                ):
-                    try:
-                        final = await run(
-                            graph,
-                            task=task_text,
-                            thread_id=thread_id,
-                            answer_provider=answer_provider,
-                            emitter=emitter,
-                            memory=memory,
-                        )
-                        await websocket.send_json(
-                            {
-                                "event": "run_complete",
-                                "data": {"success": final.success, "reason": final.reason},
-                                "ts": _now(),
-                            }
-                        )
-                    except Exception as exc:
-                        await websocket.send_json(
-                            {"event": "error", "data": {"message": str(exc)}, "ts": _now()}
-                        )
-                        await websocket.send_json(
-                            {"event": "run_complete", "data": {}, "ts": _now()}
-                        )
-                    finally:
-                        if cleanup:
-                            await cleanup()
+            elif mtype == "attach":
+                # Reconnect: re-attach this socket to a still-live run and replay its history.
+                thread_id = msg.get("thread_id", "")
+                rs = RUNS.get(thread_id)
+                if rs is None:
+                    # Run is gone (finished + GC'd, or never existed) — tell the cockpit to reset.
+                    await sender({"event": "run_absent", "data": {"threadId": thread_id}, "ts": _now()})
+                    continue
+                await _detach_current()
+                viewing = thread_id
+                await rs.attach(sender)  # replays buffered events (incl. run_complete if finished)
 
-                run_task = asyncio.create_task(_do_run())
+            elif mtype == "answer":
+                rs = RUNS.get(viewing) if viewing else None
+                if rs is not None:
+                    await rs.answer(msg.get("answer", ""))
 
             elif mtype == "stop":
-                # Cancel the running agent task (stops the graph loop + LLM/browser work),
-                # tear down the browser, and tell the cockpit the run ended.
-                if run_task is not None and not run_task.done():
-                    run_task.cancel()
-                    try:
-                        await run_task
-                    except BaseException:
-                        pass
-                if cleanup:
-                    try:
-                        await cleanup()  # idempotent — browser may already be stopped
-                    except Exception:
-                        pass
-                await websocket.send_json(
-                    {"event": "run_complete", "data": {"stopped": True}, "ts": _now()}
-                )
+                if viewing is not None:
+                    rs = RUNS.get(viewing)
+                    if rs is not None:
+                        await rs.sink.emit(AgentEvent(event="run_complete", data={"stopped": True}))
+                    await RUNS.remove(viewing)
 
             # unknown messages ignored
 
     except WebSocketDisconnect:
-        if run_task and not run_task.done():
-            run_task.cancel()
-        if cleanup:
-            try:
-                await cleanup()
-            except Exception:
-                pass
+        # The cockpit went away (refresh/close). Detach the view only — the run keeps running and
+        # can be re-attached later with the same thread_id. This is the whole point of §5.
+        await _detach_current()

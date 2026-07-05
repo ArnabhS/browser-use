@@ -43,6 +43,42 @@ const WAKE_URL = WS_URL.replace(/^ws/, "http").replace(/\/ws\/run$/, "/health");
 const MAX_WAKE_ATTEMPTS = 15; // ~90s of retrying while a cold Space boots
 const WAKE_RETRY_MS = 6000;
 
+// Persist the active run so a page refresh can RE-ATTACH to it instead of losing it. The backend
+// keeps the run (and its browser) alive after the socket drops (RunManager, spec §5); the cockpit
+// just has to remember which thread_id to re-attach to.
+const STORE_KEY = "browser-agent:activeRun";
+type Stored = { threadId: string; task: string };
+
+function loadStored(): Stored | null {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    return raw ? (JSON.parse(raw) as Stored) : null;
+  } catch {
+    return null;
+  }
+}
+function saveStored(v: Stored): void {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(v));
+  } catch {
+    /* storage unavailable — reconnect just won't survive a refresh */
+  }
+}
+function clearStored(): void {
+  try {
+    localStorage.removeItem(STORE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+function newThreadId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `ws-${Math.random().toString(16).slice(2, 10)}`;
+  }
+}
+
 export function useAgentRun(): AgentRunState {
   const [status, setStatus] = useState<RunStatus>("idle");
   const [task, setTask] = useState<string>("");
@@ -62,6 +98,10 @@ export function useAgentRun(): AgentRunState {
   const pageUrlRef = useRef<string | null>(null);
   const attemptRef = useRef<number>(0);
   const retryTimerRef = useRef<number | null>(null);
+  // The message sent as soon as the socket opens — {type:"start",...} for a fresh run or
+  // {type:"attach",...} to re-join a run after a refresh. Held in a ref so the retry/wake loop
+  // resends the right thing on every reconnect attempt.
+  const openPayloadRef = useRef<object | null>(null);
 
   const clearRetry = useCallback(() => {
     if (retryTimerRef.current !== null) {
@@ -104,23 +144,27 @@ export function useAgentRun(): AgentRunState {
     setStreaming("");
   }, []);
 
-  const start = useCallback(
-    (taskText: string) => {
+  const resetView = useCallback(() => {
+    setTimeline([]);
+    setStreaming("");
+    streamingRef.current = "";
+    setQuestion(null);
+    setResult(null);
+    setError(null);
+    setHasFrame(false);
+    hasFrameRef.current = false;
+    setPageUrl(null);
+    pageUrlRef.current = null;
+  }, []);
+
+  // Open the socket and (re)send openPayloadRef on connect. Shared by fresh starts and reconnects;
+  // the wake/retry loop is nested so a cold or asleep backend is retried transparently.
+  const connect = useCallback(
+    (payload: object) => {
       closeSocket();
       attemptRef.current = 0;
-      setStatus("running");
+      openPayloadRef.current = payload;
       setWaking(false);
-      setTask(taskText);
-      setTimeline([]);
-      setStreaming("");
-      streamingRef.current = "";
-      setQuestion(null);
-      setResult(null);
-      setError(null);
-      setHasFrame(false);
-      hasFrameRef.current = false;
-      setPageUrl(null);
-      pageUrlRef.current = null;
 
       const openSocket = () => {
         const ws = new WebSocket(WS_URL);
@@ -138,7 +182,7 @@ export function useAgentRun(): AgentRunState {
           opened = true;
           attemptRef.current = 0;
           setWaking(false);
-          ws.send(JSON.stringify({ type: "start", task: taskText }));
+          if (openPayloadRef.current) ws.send(JSON.stringify(openPayloadRef.current));
         };
 
         ws.onmessage = (evt: MessageEvent<string>) => {
@@ -201,8 +245,17 @@ export function useAgentRun(): AgentRunState {
           } else if (event === "error") {
             setError((data.message as string | undefined) ?? "Something went wrong.");
             setStatus("error");
+          } else if (event === "run_absent") {
+            // The run we tried to re-attach to is gone (finished + reaped, or never existed).
+            clearStored();
+            openPayloadRef.current = null;
+            resetView();
+            setStatus("idle");
+            setTask("");
+            closeSocket();
           } else if (event === "run_complete") {
             flushStreaming();
+            clearStored(); // the run is over — nothing to re-attach to
             const stopped = Boolean(data.stopped);
             if (stopped) {
               setResult({
@@ -246,7 +299,19 @@ export function useAgentRun(): AgentRunState {
 
       openSocket();
     },
-    [closeSocket, flushStreaming]
+    [closeSocket, flushStreaming, resetView]
+  );
+
+  const start = useCallback(
+    (taskText: string) => {
+      const threadId = newThreadId();
+      saveStored({ threadId, task: taskText });
+      setStatus("running");
+      setTask(taskText);
+      resetView();
+      connect({ type: "start", task: taskText, thread_id: threadId });
+    },
+    [connect, resetView]
   );
 
   const answer = useCallback(
@@ -261,6 +326,7 @@ export function useAgentRun(): AgentRunState {
   const stop = useCallback(() => {
     clearRetry();
     setWaking(false);
+    clearStored();
     const open = wsRef.current?.readyState === WebSocket.OPEN;
     send({ type: "stop" });
     setQuestion(null);
@@ -271,6 +337,21 @@ export function useAgentRun(): AgentRunState {
       setStatus("stopped");
     }
   }, [send, clearRetry, closeSocket]);
+
+  // On mount: if a run was in flight when the page was last open (refresh/navigation), re-attach to
+  // it and let the replayed history rebuild the UI. This is what makes a refresh non-destructive.
+  const resumedRef = useRef(false);
+  useEffect(() => {
+    if (resumedRef.current) return;
+    resumedRef.current = true;
+    const stored = loadStored();
+    if (stored) {
+      setStatus("running");
+      setTask(stored.task);
+      resetView();
+      connect({ type: "attach", thread_id: stored.threadId });
+    }
+  }, [connect, resetView]);
 
   useEffect(() => () => closeSocket(), [closeSocket]);
 

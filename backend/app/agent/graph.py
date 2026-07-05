@@ -19,8 +19,10 @@ from app.tools.dispatcher import ToolDispatcher
 
 # Types stored in checkpoint state that are not in langgraph's built-in safe list.
 # Passing class objects lets _normalize_module_keys extract (module, classname) tuples
-# automatically, which is what _check_allowed() compares against.
-_ALLOWED_MSGPACK_MODULES = [Observation, ActionCall, ActionResult, StepRecord]
+# automatically, which is what _check_allowed() compares against. ErrorCode rides inside StepRecord
+# (and AgentState.error_code) on a failed step, so it must be allowed too — else the checkpoint of a
+# failed run drops it ("Blocked deserialization of ... ErrorCode"), surfaced by the benchmark run.
+_ALLOWED_MSGPACK_MODULES = [Observation, ActionCall, ActionResult, StepRecord, ErrorCode]
 
 
 def _checkpointer() -> InMemorySaver:

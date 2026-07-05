@@ -9,7 +9,7 @@ def test_record_accumulates_and_returns_step_record():
     r1 = u.record("x/model", {"input_tokens": 10, "output_tokens": 5}, 120.0)
     u.record("x/model", {"input_tokens": 7, "output_tokens": 3}, 80.0)
     assert r1.node == "llm" and r1.input_tokens == 10 and r1.latency_ms == 120.0
-    assert u.totals() == {"input_tokens": 17, "output_tokens": 8, "calls": 2}
+    assert u.totals() == {"input_tokens": 17, "output_tokens": 8, "cached_tokens": 0, "calls": 2}
 
 
 def test_record_handles_missing_usage():
@@ -34,3 +34,27 @@ async def test_emit_uses_the_records_own_model_not_the_latest():
     u.record("model-b", {"input_tokens": 2, "output_tokens": 2}, 1.0)
     await u.emit(EventEmitter(sink), r1)
     assert sink.events[0].data["model"] == "model-a"
+
+
+def test_record_captures_cached_tokens_from_input_details():
+    # langchain 1.x reports OpenRouter/Anthropic cache reads under input_token_details.cache_read.
+    u = UsageTracker()
+    r = u.record("x/model", {"input_tokens": 100, "output_tokens": 5,
+                             "input_token_details": {"cache_read": 80}}, 10.0)
+    assert r.cached_tokens == 80
+    assert u.totals()["cached_tokens"] == 80
+
+
+def test_record_cached_tokens_default_zero_when_absent():
+    u = UsageTracker()
+    r = u.record("x/model", {"input_tokens": 10, "output_tokens": 2}, 10.0)
+    assert r.cached_tokens == 0
+
+
+async def test_emit_includes_cached_tokens():
+    u = UsageTracker()
+    sink = BufferSink()
+    r = u.record("x/model", {"input_tokens": 100, "output_tokens": 5,
+                            "input_token_details": {"cache_read": 80}}, 10.0)
+    await u.emit(EventEmitter(sink), r)
+    assert sink.events[0].data["cachedTokens"] == 80

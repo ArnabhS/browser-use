@@ -18,10 +18,14 @@ class Viewport(BaseModel):
 
 
 class Element(BaseModel):
+    model_config = _CAMEL
     index: int
     role: str
     name: str = ""
     value: str | None = None
+    # True when this element was not present in the previous turn's observation (same page) — i.e. it
+    # appeared as a result of the agent's last action (a dropdown, modal, autocomplete list…).
+    is_new: bool = Field(default=False, alias="isNew")
 
 
 class Tab(BaseModel):
@@ -62,4 +66,7 @@ class Envelope(BaseModel):
     model_config = _CAMEL
     protocol_version: str = Field(default=PROTOCOL_VERSION, alias="protocolVersion")
     type: str
+    # Correlation id for request/response over the bridge relay: a request carries an `id` and its
+    # response echoes the same one. Optional so unsolicited messages (frame, register) can omit it.
+    id: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)

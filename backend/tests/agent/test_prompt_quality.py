@@ -1,11 +1,11 @@
 """The system prompt must actually coach the agent — perception, a reasoning scaffold,
 completion discipline, and when to ask the human — not just dump rules and tools."""
-from app.agent.prompt import build_system_message
+from app.agent.prompt import render_system_text
 from app.agent.state import AgentState
 
 
 def _text(task: str = "buy a hat") -> str:
-    return build_system_message(AgentState(task=task, thread_id="t1")).content
+    return render_system_text(AgentState(task=task, thread_id="t1"))
 
 
 def test_prompt_frames_perception_and_one_action_per_turn():

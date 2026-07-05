@@ -14,9 +14,12 @@ from app.events.emitter import EventEmitter
 _BROWSER_ACTION = {
     "Navigate": "navigate",
     "Click": "click",
+    "LongPress": "long_press",
     "TypeText": "type",
     "Scroll": "scroll",
     "Extract": "extract",
+    "SearchPage": "search_page",
+    "FindElements": "find_elements",
     "WaitFor": "wait_for",
     "PressKey": "press_key",
     "Clear": "clear",

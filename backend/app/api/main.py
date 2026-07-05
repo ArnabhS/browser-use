@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.bridge_ws import ws_bridge
 from app.api.ws import ws_run
 
 app = FastAPI(title="browser-agent backend")
@@ -13,6 +14,7 @@ app.add_middleware(
 )
 
 app.add_api_websocket_route("/ws/run", ws_run)
+app.add_api_websocket_route("/ws/bridge", ws_bridge)
 
 
 @app.get("/health")

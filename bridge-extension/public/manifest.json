@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Browser Agent Bridge",
-  "version": "0.0.1",
-  "description": "Bridges the browser-agent backend to the user's Chrome (scaffold).",
+  "version": "0.1.0",
+  "description": "Lets the browser-agent backend drive this Chrome tab (your real browser, your IP, your logins).",
   "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "Control this tab with the agent" },
   "permissions": ["debugger", "tabs"],
   "host_permissions": ["<all_urls>"]
 }

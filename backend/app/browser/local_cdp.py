@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
+from urllib.parse import urlparse
 
 from browser_agent_contracts import ActionCall, ActionResult, Observation, Tab
 from playwright.async_api import Browser, Page, TimeoutError as PWTimeout, async_playwright
@@ -10,6 +12,14 @@ from app.browser.screencast import OnFrame, ScreencastStreamer
 from app.browser.tab_registry import TabRegistry
 from app.observation.extract import extract, probe_dom
 from app.observation.funnel.pipeline import run_funnel
+from app.observation.page_query import (
+    FIND_JS,
+    SEARCH_JS,
+    find_args,
+    format_find,
+    format_search,
+    search_args,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +66,20 @@ _HREF_AT_JS = """
 }
 """
 
+
+def _navigable_href(href: str | None, current_url: str) -> str | None:
+    """A hyperlink worth following as a click fallback: an http(s) target that is a different page
+    than where we are (ignoring the #fragment). Rejects javascript:/mailto:/tel:, empty hrefs, and
+    in-page anchors — those aren't navigations, so following them would be wrong."""
+    if not href:
+        return None
+    low = href.lower()
+    if not (low.startswith("http://") or low.startswith("https://")):
+        return None
+    if href.split("#", 1)[0] == current_url.split("#", 1)[0]:
+        return None
+    return href
+
 # Real viewport size — visualViewport is correct on retina / CDP-attach where Playwright's
 # page.viewport_size can be None. Falls back to innerWidth/Height.
 _VIEWPORT_JS = (
@@ -84,8 +108,27 @@ _SOM_OVERLAY_JS = """
 """
 
 
+# Stealth: strip the obvious automation tells so bot-walls (PerimeterX/DataDome) serve the real
+# page. The LOAD-BEARING lever is running HEADFUL — verified: from the same residential IP, headful
+# loads real Skyscanner (543 elements) while headless gets the PerimeterX captcha (3 elements),
+# because the deciding signal is the headless RENDERING fingerprint, not the CDP layer (Playwright
+# sends Runtime.enable in both modes, yet headful passes). On the server we run headful under xvfb
+# (see Dockerfile). These args/JS are cheap defense-in-depth on top of that.
+_STEALTH_ARGS = ["--disable-blink-features=AutomationControlled"]
+_STEALTH_IGNORE_DEFAULT_ARGS = ["--enable-automation"]
+_STEALTH_JS = (
+    "(() => {"
+    "  try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); } catch (e) {}"
+    "  try { if (!window.chrome) { window.chrome = { runtime: {} }; } } catch (e) {}"
+    "  try { if (!navigator.languages || !navigator.languages.length) {"
+    "    Object.defineProperty(navigator, 'languages', { get: () => ['en-IN', 'en'] }); } } catch (e) {}"
+    "})();"
+)
+
+
 class LocalCDPSession:
-    """BrowserSession over a local headless Chromium (Playwright). Real eyes + trusted hands."""
+    """BrowserSession over a local Chromium (Playwright). Real eyes + trusted hands. Runs headful by
+    default — see settings.cdp_headless — because headless is what most bot-walls detect."""
 
     def __init__(
         self,
@@ -99,8 +142,11 @@ class LocalCDPSession:
         locale: str = "",
         timezone: str = "",
         geolocation: tuple[float, float] | None = None,
+        proxy: str = "",
+        stealth: bool = True,
     ) -> None:
         self._headless = headless
+        self._stealth = stealth
         self._draw_overlay = draw_som_overlay
         # Home page the session opens on (empty = leave the blank tab). Production passes Google
         # from settings; kept empty by default so tests start hermetically on about:blank.
@@ -110,6 +156,8 @@ class LocalCDPSession:
         self._locale = locale
         self._timezone = timezone
         self._geolocation = geolocation
+        # Proxy URL (empty = direct). The only lever that changes the IP sites geolocate by.
+        self._proxy = proxy
         # Diagnostics: when on, each observe() logs a per-stage funnel trace + a raw-DOM probe
         # for `funnel_focus`, so a "can see it, can't click it" element can be traced to the
         # exact stage that drops it (or shown to be never extracted at all).
@@ -135,6 +183,26 @@ class LocalCDPSession:
         self._streamer = ScreencastStreamer()
         self._streaming = False
         self._stream_page: Page | None = None
+
+    def _proxy_option(self) -> dict | None:
+        """Parse the configured proxy URL into Playwright's proxy option (server + optional creds).
+        Returns None when no proxy is set. Playwright wants credentials in separate fields, not
+        embedded in the server URL."""
+        raw = self._proxy.strip()
+        if not raw:
+            return None
+        u = urlparse(raw)
+        if not u.hostname:
+            return None
+        server = f"{u.scheme or 'http'}://{u.hostname}"
+        if u.port:
+            server += f":{u.port}"
+        opt: dict = {"server": server}
+        if u.username:
+            opt["username"] = u.username
+        if u.password:
+            opt["password"] = u.password
+        return opt
 
     def _context_kwargs(self) -> dict:
         """new_context() options for locale/timezone/geolocation, so pages see a consistent region
@@ -171,8 +239,19 @@ class LocalCDPSession:
             ctx = self._browser.contexts[0] if self._browser.contexts else await self._browser.new_context()
             self._page = await ctx.new_page()
         else:
-            self._browser = await self._pw.chromium.launch(headless=self._headless)
+            launch_kwargs: dict = {"headless": self._headless}
+            proxy = self._proxy_option()
+            if proxy:
+                # Launch-level proxy is the reliable path for Chromium (used per-request, so an
+                # unreachable proxy only bites on navigation, not at launch).
+                launch_kwargs["proxy"] = proxy
+            if self._stealth:
+                launch_kwargs["args"] = _STEALTH_ARGS
+                launch_kwargs["ignore_default_args"] = _STEALTH_IGNORE_DEFAULT_ARGS
+            self._browser = await self._pw.chromium.launch(**launch_kwargs)
             ctx = await self._browser.new_context(**self._context_kwargs())
+            if self._stealth:
+                await ctx.add_init_script(_STEALTH_JS)  # runs before page scripts, in every frame
             self._page = await ctx.new_page()
         if self._start_url:
             # Best-effort home page: a failed/slow load must never stop the session from starting.
@@ -228,18 +307,42 @@ class LocalCDPSession:
             await self._log_dom_probe(focus, meta.url)
         if self._draw_overlay and self.index_boxes:
             await self.page.evaluate(_SOM_OVERLAY_JS, [[i, *b] for i, b in self.index_boxes.items()])
-            self.latest_screenshot = await self.page.screenshot()
-            await self.page.evaluate("() => { const o = document.getElementById('__som_overlay__'); if (o) o.remove(); }")
+            try:
+                self.latest_screenshot = await self._safe_screenshot()
+            finally:  # remove the overlay even if the screenshot failed — never leak it onto the page
+                await self.page.evaluate("() => { const o = document.getElementById('__som_overlay__'); if (o) o.remove(); }")
         else:
-            self.latest_screenshot = await self.page.screenshot()
+            self.latest_screenshot = await self._safe_screenshot()
         return observation
+
+    _SCREENSHOT_TIMEOUT = 3.0
+
+    async def _safe_screenshot(self) -> bytes | None:
+        """Best-effort viewport screenshot for the vision model / live view — must never crash or
+        stall the run. Captured via CDP Page.captureScreenshot, which grabs the frame immediately;
+        Playwright's page.screenshot() instead blocks on fonts + paint-stability and hangs on
+        animation-heavy sites (metacritic timed out every turn, starving the task). Keeps the
+        previous frame on any failure."""
+        try:
+            cdp = await self._cdp_session()
+            res = await asyncio.wait_for(
+                cdp.send("Page.captureScreenshot", {"format": "png"}), timeout=self._SCREENSHOT_TIMEOUT
+            )
+            return base64.b64decode(res["data"])
+        except Exception as e:
+            # A hung capture blocks every command queued behind it on this CDP session — drop the
+            # session so the next screenshot starts fresh instead of inheriting the stall (else one
+            # slow page cascades into every later screenshot timing out).
+            self._cdp = None
+            logger.warning("screenshot failed (%s) — keeping previous frame", e or type(e).__name__)
+            return self.latest_screenshot
 
     async def navigate(self, url: str) -> ActionResult:
         await self.page.goto(url)
         await self._settle()
         return ActionResult(success=True, reason=f"navigated to {url}")
 
-    _ACTION_TIMEOUT = {"navigate": 30.0, "click": 10.0, "type": 10.0, "scroll": 5.0,
+    _ACTION_TIMEOUT = {"navigate": 30.0, "click": 10.0, "long_press": 15.0, "type": 10.0, "scroll": 5.0,
                        "wait_for": 30.0, "extract": 15.0, "press_key": 5.0, "clear": 10.0,
                        "select_option": 10.0, "new_tab": 30.0, "switch_tab": 5.0, "close_tab": 5.0,
                        "observe_tab": 5.0, "open_in_new_tab": 30.0}
@@ -264,6 +367,7 @@ class LocalCDPSession:
                 return ActionResult(success=False, reason=f"stale index {args.get('index')}")
             cx, cy = geo
             before = set(self.page.context.pages)
+            url_before = self.page.url
             await self.page.mouse.click(cx, cy)
             if name == "type":
                 await self.page.keyboard.type(str(args.get("text", "")))
@@ -271,7 +375,36 @@ class LocalCDPSession:
             # Only a click can open a new tab; typing into a field never does — skip the wait.
             followed = await self._adopt_new_tab(before) if name == "click" else False
             tab = " (followed new tab)" if followed else ""
+            # Click-doesn't-navigate fallback: some links (search-result cards, JS-routed anchors
+            # that preventDefault) swallow a trusted click and never move the page, so the agent
+            # re-clicks the same dead index until the loop guard trips. If the click landed on a
+            # real hyperlink and nothing changed, follow its href directly.
+            if name == "click" and not followed and self.page.url == url_before:
+                href = _navigable_href(await self.page.evaluate(_HREF_AT_JS, [cx, cy]), url_before)
+                if href:
+                    try:
+                        await self.page.goto(href, wait_until="domcontentloaded")
+                        await self._settle()
+                        tab = " (via link href)"
+                    except Exception:  # bad/blocked href — leave the page as-is, agent will retry
+                        pass
             return ActionResult(success=True, reason=f"{name} at [{args['index']}]{tab}")
+        if name == "long_press":
+            geo = self.index_map.get(int(args["index"]))
+            if geo is None:
+                return ActionResult(success=False, reason=f"stale index {args.get('index')}")
+            cx, cy = geo
+            duration = min(max(int(args.get("duration_ms", 800)), 0), 5000) / 1000
+            before = set(self.page.context.pages)
+            await self.page.mouse.move(cx, cy)
+            await self.page.mouse.down()  # press and HOLD in place — trusted, isTrusted:true
+            await asyncio.sleep(duration)
+            await self.page.mouse.up()
+            await self._settle()
+            tab = " (followed new tab)" if await self._adopt_new_tab(before) else ""
+            return ActionResult(
+                success=True, reason=f"long-pressed [{args['index']}] for {int(duration * 1000)}ms{tab}"
+            )
         if name == "scroll":
             direction = args.get("direction", "down")
             steps = int(args.get("amount", 1))
@@ -296,6 +429,12 @@ class LocalCDPSession:
         if name == "extract":
             text = (await self.page.inner_text("body"))[:4000]
             return ActionResult(success=True, reason=text)
+        if name == "search_page":
+            res = await self.page.evaluate(SEARCH_JS, search_args(args))
+            return ActionResult(success=not (res or {}).get("error"), reason=format_search(res))
+        if name == "find_elements":
+            res = await self.page.evaluate(FIND_JS, find_args(args))
+            return ActionResult(success=not (res or {}).get("error"), reason=format_find(res))
         if name == "press_key":
             before = set(self.page.context.pages)
             await self.page.keyboard.press(str(args["key"]))

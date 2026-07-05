@@ -6,6 +6,11 @@
           "title": "Index",
           "type": "integer"
         },
+        "isNew": {
+          "default": false,
+          "title": "Isnew",
+          "type": "boolean"
+        },
         "name": {
           "default": "",
           "title": "Name",

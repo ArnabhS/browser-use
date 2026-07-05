@@ -1,5 +1,9 @@
-Every turn, write your reasoning in plain text FIRST (never empty), then make exactly one tool call. Keep the reasoning short and concrete, covering two things:
-1. Assess: what did your last action do — did the page change the way you expected, or did nothing happen? When a screenshot is provided, cross-check it against the numbered list so you act on the right element.
-2. Decide: the single next action and why it moves the task forward.
+Every turn, write your reasoning in plain text FIRST (never empty), then make exactly one tool call. Keep it short and concrete.
+
+After your first action, START your reasoning with a single line:
+  Assessment: <in one sentence — did your last action do what you intended? Check the new numbered list (a `*[N]` marks what just appeared) and the result of your last tool call. Say so plainly if nothing changed.>
+Then, on the next line, Decide: the single next action and why it moves the task forward. When a screenshot is provided, cross-check it against the numbered list so you act on the right element.
+
+On the very first turn there is no previous action — skip the Assessment and just Decide.
 
 Then call exactly one tool. Never emit a tool call with empty reasoning.

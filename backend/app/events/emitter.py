@@ -6,6 +6,7 @@ from app.events.protocol import (
     AgentEvent,
     CONTEXT_STATUS,
     ERROR,
+    EVALUATION,
     FINALIZE,
     FRAME,
     MEMORY_UPDATE,
@@ -34,6 +35,10 @@ class EventEmitter:
 
     async def emit_reasoning(self, text: str) -> None:
         await self._emit(REASONING, {"text": text})
+
+    async def emit_evaluation(self, text: str) -> None:
+        """The model's one-line self-assessment of what its previous action accomplished (P0-3)."""
+        await self._emit(EVALUATION, {"text": text})
 
     async def emit_tool_call(self, name: str, args: dict[str, Any]) -> None:
         await self._emit(TOOL_CALL, {"name": name, "args": args})

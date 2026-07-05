@@ -5,7 +5,9 @@ How each turn works:
 Always:
 - Refer to elements ONLY by an [N] index from the CURRENT list. Never reuse an index from a previous turn and never invent one — if what you want is not in the list, it is not actionable this turn.
 - Take exactly ONE action per turn, then read the new page to confirm what your action did before deciding the next one.
+- An element shown as `*[N]` (with a leading asterisk) appeared since your last action — a dropdown, dialog, autocomplete list, or error message your action just revealed. When you acted expecting something to appear, look for the `*`: it confirms the effect and is usually what to engage next.
 - If an element you expect is missing (a Sort control, "Add to cart", a filter, a button), Scroll to bring it into view BEFORE concluding it is not there — the list only covers the current viewport. The "(… elements hidden)" note means there is more to scroll to.
+- To check whether some text or element is anywhere on the page, prefer SearchPage(pattern) (greps the page text) or FindElements(selector) (CSS query) over scrolling around blindly — they inspect the WHOLE page at once and are decisive. Use Extract only when you need to read/understand content, not merely to check presence.
 - If the page may still be loading, or the content you need has not appeared yet, WaitFor(seconds) and observe again instead of guessing or giving up.
 - If your last action did NOT change the page, it had no effect — do NOT repeat it. Change approach: scroll, wait, pick a different element, or navigate directly.
 - Only state data you can actually SEE on the page right now (or that you saved to working memory). Never make up prices, names, counts, statuses, or results.

@@ -16,8 +16,9 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     PYTHONUNBUFFERED=1 \
-    # Cloud containers have no display — settings.py defaults cdp_headless to False, so force it.
-    CDP_HEADLESS=true
+    # Run Chromium HEADFUL (headless is what bot-walls like PerimeterX/DataDome detect). The
+    # container has no real display, so we launch it under xvfb (a virtual framebuffer) — see CMD.
+    CDP_HEADLESS=false
 
 WORKDIR /app
 
@@ -34,10 +35,14 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY backend ./
 RUN uv sync --frozen --no-dev
 
-# Chromium binary + its apt system libraries. Needs root + apt; make it world-readable so the
-# non-root runtime user below can launch it.
-RUN uv run --no-sync playwright install --with-deps chromium \
-    && chmod -R a+rx /ms-playwright
+# Chromium binary + its apt system libraries, plus xvfb (virtual display so Chromium runs headful
+# on a headless server). Needs root + apt; make Chromium world-readable so the non-root runtime
+# user below can launch it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends xvfb \
+    && uv run --no-sync playwright install --with-deps chromium \
+    && chmod -R a+rx /ms-playwright \
+    && rm -rf /var/lib/apt/lists/*
 
 # Drop to a non-root user. Hugging Face Spaces runs the container as UID 1000; harmless on
 # Render / Cloud Run (they only need the process to bind the port).
@@ -46,5 +51,6 @@ USER user
 ENV PATH="/app/backend/.venv/bin:$PATH"
 
 # HF Spaces expects the app on 7860 (PORT unset → default). Render / Cloud Run inject $PORT.
+# xvfb-run gives Chromium a virtual display so it can run headful (anti-detection) on a server.
 EXPOSE 7860
-CMD ["sh", "-c", "exec uvicorn app.api.main:app --host 0.0.0.0 --port ${PORT:-7860}"]
+CMD ["sh", "-c", "exec xvfb-run -a --server-args='-screen 0 1920x1080x24' uvicorn app.api.main:app --host 0.0.0.0 --port ${PORT:-7860}"]
