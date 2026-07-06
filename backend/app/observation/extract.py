@@ -129,6 +129,21 @@ EXTRACT_JS = r"""
     }
     return tested;   // off-screen (nothing tested) is NOT occlusion — let visibility handle it
   };
+  // The element's interaction STATE — checked / expanded / selected / disabled — folded into the
+  // value field so the agent knows whether a checkbox is already ticked, a menu already open, a
+  // filter already applied, or a control dead. Reads native props first, ARIA as fallback.
+  const stateOf = (el) => {
+    const parts = [];
+    const aria = (k) => el.getAttribute(k);
+    const type = (el.getAttribute('type') || '').toLowerCase();
+    if (type === 'checkbox' || type === 'radio') { if (el.checked) parts.push('checked'); }
+    else if (aria('aria-checked') === 'true') parts.push('checked');
+    const exp = aria('aria-expanded');
+    if (exp === 'true') parts.push('expanded'); else if (exp === 'false') parts.push('collapsed');
+    if (aria('aria-selected') === 'true' || el.selected === true) parts.push('selected');
+    if (el.disabled === true || aria('aria-disabled') === 'true') parts.push('disabled');
+    return parts.join(',');
+  };
   // Walk the whole tree INCLUDING open shadow roots — querySelectorAll('*') stops at shadow
   // boundaries, so web-component controls (many enterprise/banking widgets, some cookie banners)
   // were invisible. Closed shadow roots are unreachable from page script; leave those to CDP.
@@ -164,7 +179,13 @@ EXTRACT_JS = r"""
         tag: el.tagName.toLowerCase(),
         role: el.getAttribute('role') || el.tagName.toLowerCase(),
         name: name(el),
-        value: (el.value || '').slice(0, 200) || null,
+        value: (() => {
+          const st = stateOf(el);
+          // Don't echo a checkbox/radio's meaningless "on" default — the state string is what matters.
+          const t = (el.getAttribute('type') || '').toLowerCase();
+          const v = (t === 'checkbox' || t === 'radio') ? '' : (el.value || '').slice(0, 200);
+          return st ? (v ? `${v} (${st})` : st) : (v || null);
+        })(),
         x: r.left, y: r.top, width: r.width, height: r.height,
         visible, in_viewport: inViewport, occluded,
       });
