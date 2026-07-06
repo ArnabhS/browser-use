@@ -44,7 +44,7 @@ def _usage(msg: AIMessage) -> tuple[int, int]:
     return int(u.get("input_tokens", 0)), int(u.get("output_tokens", 0))
 
 
-def build_reason_node(llm: LLMClient, emitter: EventEmitter):
+def build_reason_node(llm: LLMClient, emitter: EventEmitter, max_steps: int = 25):
     async def reason(state: AgentState) -> dict:
         messages = list(state.messages)
         nudge_delta: dict = {}
@@ -96,6 +96,19 @@ def build_reason_node(llm: LLMClient, emitter: EventEmitter):
                 "cannot proceed, call Complete(success=false)."
             )))
             nudge_delta = {"nudge_count": state.nudge_count + 1}
+
+        # Budget awareness: near the step cap, report what you have. The top failure mode on long
+        # tasks is exhausting the budget mid-search with nothing reported — a well-explained partial
+        # answer via Complete beats a MAX_STEPS timeout.
+        remaining = max_steps - state.step
+        if 0 < remaining <= 5:
+            urgency = "This is your LAST step — " if remaining <= 1 else f"Only {remaining} steps left — "
+            messages.append(HumanMessage(content=(
+                f"{urgency}if you already have the answer or useful partial findings, call "
+                "Complete(success, reason) NOW and put the findings in the reason. Running out of "
+                "steps with findings unreported counts as a failure. If one specific thing is still "
+                "missing, go straight for it."
+            )))
 
         compacted, ctx_status = compact_for_llm(messages)
         if compacted and isinstance(compacted[0], AIMessage):

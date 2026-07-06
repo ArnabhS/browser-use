@@ -64,3 +64,27 @@ def test_same_action_on_same_page_is_a_loop():
     a = ActionCall(name="click", args={"index": 64})
     url = "https://bbcgoodfood.com/search?q=Keto"
     assert _action_sig(a, url) == _action_sig(a, url)
+
+
+def _state_at(step: int):
+    return AgentState(task="t", thread_id="t1", step=step, messages=[HumanMessage(content="page")])
+
+
+async def test_budget_warning_injected_when_steps_running_low():
+    # Near the step cap, the agent must be told to report partial findings via Complete rather than
+    # run out with nothing reported (the maxsteps-with-empty-hands failure mode).
+    llm = FakeLLMClient(turns=[ai("assess; decide", _CLICK)])
+    node = build_reason_node(llm, EventEmitter(BufferSink()), max_steps=10)
+    delta = await node(_state_at(7))                 # 3 steps left
+    assert delta.get("status") != "failed"
+    sent = llm.calls[0]
+    assert any(isinstance(m, HumanMessage) and "step" in m.content.lower() and "complete" in m.content.lower()
+               for m in sent)
+
+
+async def test_no_budget_warning_when_plenty_of_steps():
+    llm = FakeLLMClient(turns=[ai("assess; decide", _CLICK)])
+    node = build_reason_node(llm, EventEmitter(BufferSink()), max_steps=60)
+    await node(_state_at(3))                          # 57 steps left
+    assert not any(isinstance(m, HumanMessage) and "steps left" in m.content.lower()
+                   for m in llm.calls[0])

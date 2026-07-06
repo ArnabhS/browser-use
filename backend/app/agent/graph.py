@@ -63,7 +63,7 @@ def build_graph(*, session: BrowserSession, llm: LLMClient, emitter: EventEmitte
                 store: TrajectoryStore, max_steps: int = 25, use_vision: bool = False, memory=None):
     g = StateGraph(AgentState)
     g.add_node("observe", build_observe_node(session, emitter, use_vision=use_vision))
-    g.add_node("reason", build_reason_node(llm, emitter))
+    g.add_node("reason", build_reason_node(llm, emitter, max_steps))
     g.add_node("act", build_act_node(ToolDispatcher(), session, emitter, store, memory))
     g.add_node("finalize", build_finalize_node(emitter, max_steps, memory))
 
