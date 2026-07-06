@@ -13,13 +13,14 @@ async def test_probe_flags_a_noninteractive_div_button_as_unextractable():
     sess = LocalCDPSession(funnel_debug=True, funnel_focus="add to cart")
     await sess.start()
     try:
-        # A <div> styled as a button with only a JS listener — no <button>/role/onclick attr/
-        # tabindex. Exactly the kind of control the extractor's isInteractive() can't see.
+        # A <div> styled clickable with ONLY cursor:pointer — no <button>/role/onclick/tabindex and
+        # no real event listener. By design (matching browser-use/Skyvern) a bare cursor:pointer div
+        # is NOT treated as interactive, so it stays out of the list. (A div with a real click
+        # listener now IS extracted — see test_extract_listeners.)
         await sess.page.set_content(
             "<div style='padding:40px'>"
             "<div id='atc' style='cursor:pointer;font-size:30px'>ADD TO CART</div>"
             "</div>"
-            "<script>document.getElementById('atc').addEventListener('click',()=>{})</script>"
         )
         obs = await sess.observe()
         assert not any("add to cart" in (e.name or "").lower() for e in obs.elements)

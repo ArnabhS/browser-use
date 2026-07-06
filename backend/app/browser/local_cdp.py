@@ -11,7 +11,7 @@ from playwright.async_api import Browser, Page, TimeoutError as PWTimeout, async
 from app.browser.screencast import OnFrame, ScreencastStreamer
 from app.browser.som_overlay import render_som
 from app.browser.tab_registry import TabRegistry
-from app.observation.extract import extract, probe_dom
+from app.observation.extract import LISTENER_TAG_JS, extract, probe_dom
 from app.observation.funnel.pipeline import run_funnel
 from app.observation.page_query import (
     FIND_JS,
@@ -286,6 +286,7 @@ class LocalCDPSession:
     async def observe(self, *, include_som: bool = True) -> Observation:
         self._follow_unseen_tab()
         await self._ensure_stream_on_active_page()
+        await self._tag_listeners()
         raw, meta = await extract(self.page)
         self._shot_counter += 1
         ref = f"shot-{self._shot_counter}"
@@ -308,6 +309,17 @@ class LocalCDPSession:
                 logger.warning("SoM compositing failed (%s) — sending clean frame", e)
         self.latest_screenshot = raw
         return observation
+
+    async def _tag_listeners(self) -> None:
+        """Best-effort: flag elements carrying a real click/pointer listener (CDP getEventListeners,
+        a DevTools-only API) into a WeakSet on window, which the page-context EXTRACT_JS then reads.
+        Runs in the page's main world so the two evals share `window`. Never fatal."""
+        try:
+            cdp = await self._cdp_session()
+            await cdp.send("Runtime.evaluate",
+                           {"expression": LISTENER_TAG_JS, "includeCommandLineAPI": True, "returnByValue": True})
+        except Exception:
+            pass
 
     async def _device_pixel_ratio(self) -> float:
         """CDP captures at the device pixel ratio, but SoM boxes are in CSS px — this scales them to

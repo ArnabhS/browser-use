@@ -4,7 +4,7 @@ funnel is byte-for-byte identical. Covers the main frame plus DIRECT child ifram
 per frame, offset by the iframe's box — same math as the Playwright _extract_child_frames)."""
 from __future__ import annotations
 
-from app.observation.extract import EXTRACT_JS
+from app.observation.extract import EXTRACT_JS, LISTENER_TAG_JS
 from app.observation.raw import PageMeta, RawElement
 
 # Child-frame guards (mirror the Playwright path): skip tracking pixels / hidden frames, cap the count.
@@ -31,6 +31,15 @@ async def eval_json(client, session_id: str, expression: str, *, await_promise: 
 async def extract_cdp(client, session_id: str) -> tuple[list[RawElement], PageMeta]:
     """Run EXTRACT_JS in the main frame + direct child iframes; build the (RawElement[], PageMeta) the
     funnel expects with all coordinates in main-viewport space."""
+    # Flag real click/pointer listeners first (getEventListeners needs the DevTools CLI API, so it
+    # can't run inside EXTRACT_JS's page-context eval) — best-effort, main frame only.
+    try:
+        await client.send.Runtime.evaluate(
+            params={"expression": LISTENER_TAG_JS, "returnByValue": True, "includeCommandLineAPI": True},
+            session_id=session_id,
+        )
+    except Exception:
+        pass
     data = await eval_json(client, session_id, f"({EXTRACT_JS})()")
     raw = [RawElement(**e) for e in data["elements"]]
     meta = PageMeta(

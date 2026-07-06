@@ -4,6 +4,30 @@ import asyncio
 
 from app.observation.raw import PageMeta, RawElement
 
+# Runs via CDP Runtime.evaluate with includeCommandLineAPI (getEventListeners is a DevTools-only
+# helper, not reachable from page script). It records every element carrying a real click/pointer
+# listener into a WeakSet on window, which EXTRACT_JS then reads — so a plain <div>/<span> wired up
+# with addEventListener('click', …) by ANY framework becomes interactable. Fresh WeakSet each call
+# (no stale markers, no DOM mutation). 10k-element guard mirrors browser-use.
+LISTENER_TAG_JS = r"""
+(() => {
+  try {
+    const set = new WeakSet();
+    const all = document.querySelectorAll('*');
+    if (all.length <= 10000 && typeof getEventListeners === 'function') {
+      for (const el of all) {
+        try {
+          const L = getEventListeners(el);
+          if (L && (L.click || L.mousedown || L.mouseup || L.pointerdown || L.pointerup)) set.add(el);
+        } catch (e) {}
+      }
+    }
+    window.__somListeners = set;
+    return true;
+  } catch (e) { return false; }
+})()
+"""
+
 EXTRACT_JS = r"""
 () => {
   const INTERACTIVE_TAGS = new Set(['a','button','input','select','textarea','summary']);
@@ -31,6 +55,10 @@ EXTRACT_JS = r"""
     if (el.getAttribute('contenteditable') === 'true') return true;
     if (el.tabIndex >= 0 && tag !== 'body' && tag !== 'html') return true;
     if (hasReactClickHandler(el)) return true;
+    // Real click/pointer listeners found by a CDP getEventListeners pre-pass (see LISTENER_TAG_JS)
+    // and stashed on window — catches non-semantic clickables from ANY framework (Vue, Svelte,
+    // vanilla), not just React, e.g. a bare <span> with addEventListener('click', …).
+    try { if (window.__somListeners && window.__somListeners.has(el)) return true; } catch (e) {}
     return false;
   };
   // The VISIBLE text is ground truth for the agent (it cross-references the screenshot / SoM
@@ -81,7 +109,15 @@ EXTRACT_JS = r"""
     let tested = false;
     for (const [px, py] of pts) {
       if (px < 0 || py < 0 || px >= innerWidth || py >= innerHeight) continue;
-      const t = document.elementFromPoint(px, py);
+      // Pierce shadow roots: document.elementFromPoint returns the shadow HOST, so a shadow-DOM
+      // control would test against its own host and get wrongly culled. Descend to the real
+      // topmost node so the self/child checks below operate inside the shadow tree.
+      let t = document.elementFromPoint(px, py);
+      while (t && t.shadowRoot) {
+        const inner = t.shadowRoot.elementFromPoint(px, py);
+        if (!inner || inner === t) break;
+        t = inner;
+      }
       if (!t) continue;
       tested = true;
       if (t === el || el.contains(t) || t.contains(el)) return false;  // self / child / wrapper
@@ -93,8 +129,24 @@ EXTRACT_JS = r"""
     }
     return tested;   // off-screen (nothing tested) is NOT occlusion — let visibility handle it
   };
+  // Walk the whole tree INCLUDING open shadow roots — querySelectorAll('*') stops at shadow
+  // boundaries, so web-component controls (many enterprise/banking widgets, some cookie banners)
+  // were invisible. Closed shadow roots are unreachable from page script; leave those to CDP.
+  const deepQueryAll = (root) => {
+    const acc = [];
+    const walk = (node) => {
+      let els;
+      try { els = node.querySelectorAll('*'); } catch (e) { return; }
+      for (const el of els) {
+        acc.push(el);
+        if (el.shadowRoot) walk(el.shadowRoot);
+      }
+    };
+    walk(root);
+    return acc;
+  };
   const out = [];
-  for (const el of document.querySelectorAll('*')) {
+  for (const el of deepQueryAll(document)) {
     // Anti-bot pages (PerimeterX — e.g. Skyscanner's captcha) plant elements with a nuked
     // prototype chain: every property reads undefined and naive crawlers crash. One hostile
     // element must never kill the whole observe — skip it and keep extracting.
