@@ -39,10 +39,16 @@ RUN uv sync --frozen --no-dev
 # on a headless server). Needs root + apt; make Chromium world-readable so the non-root runtime
 # user below can launch it.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends xvfb \
+    && apt-get install -y --no-install-recommends xvfb xauth \
     && uv run --no-sync playwright install --with-deps chromium \
     && chmod -R a+rx /ms-playwright \
+    && mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix \
     && rm -rf /var/lib/apt/lists/*
+
+# Startup wrapper: launches Xvfb in the background, then exec's uvicorn (see the script for why
+# this replaces `xvfb-run uvicorn`, which could wedge startup).
+COPY docker-entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Drop to a non-root user. Hugging Face Spaces runs the container as UID 1000; harmless on
 # Render / Cloud Run (they only need the process to bind the port).
@@ -51,6 +57,7 @@ USER user
 ENV PATH="/app/backend/.venv/bin:$PATH"
 
 # HF Spaces expects the app on 7860 (PORT unset → default). Render / Cloud Run inject $PORT.
-# xvfb-run gives Chromium a virtual display so it can run headful (anti-detection) on a server.
+# The entrypoint starts Xvfb (virtual display for headful Chromium) then exec's uvicorn, so the
+# port binds immediately and never waits on the X server — see docker-entrypoint.sh.
 EXPOSE 7860
-CMD ["sh", "-c", "exec xvfb-run -a --server-args='-screen 0 1920x1080x24' uvicorn app.api.main:app --host 0.0.0.0 --port ${PORT:-7860}"]
+CMD ["/usr/local/bin/entrypoint.sh"]
