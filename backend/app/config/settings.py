@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     # normal gemini/sonnet calls return in ~2-3s, so this only trips on a genuine hang, and the
     # client's own retry then recovers on a fresh request.
     llm_request_timeout: float = 45.0
+    # Output cap per completion: one reasoning block + one tool call needs well under this. Without
+    # a cap, a degenerate repetition loop ("Let's click [56]." x hundreds, seen live on MakeMyTrip)
+    # runs to the provider limit, then the blob poisons every later turn's context.
+    llm_max_output_tokens: int = 2000
     # "fake" (tests) | "local_cdp" (server-side Chromium) | "extension_bridge" (the user's OWN
     # Chrome, driven via the bridge extension over /ws/bridge — real IP, real logins).
     browser_backend: str = "fake"

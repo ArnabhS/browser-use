@@ -66,6 +66,54 @@ def test_same_action_on_same_page_is_a_loop():
     assert _action_sig(a, url) == _action_sig(a, url)
 
 
+def test_sig_keys_on_element_identity_not_churning_index():
+    # MakeMyTrip renumbers [N] every turn, so the SAME "SEARCH" button was [66], then [60], then
+    # [56]. Keyed by raw index, those re-clicks never collide and the loop guard is blind.
+    url = "https://www.makemytrip.com/"
+    a = _action_sig(ActionCall(name="click", args={"index": 66}), url, target="button:SEARCH")
+    b = _action_sig(ActionCall(name="click", args={"index": 56}), url, target="button:SEARCH")
+    assert a == b
+
+
+def test_sig_distinguishes_different_elements_that_reuse_an_index():
+    # The converse hazard: index 31 was "Round Trip" one turn and something else the next —
+    # clicking both is progress, not a loop.
+    url = "https://www.makemytrip.com/"
+    a = _action_sig(ActionCall(name="click", args={"index": 31}), url, target="radio:Round Trip")
+    b = _action_sig(ActionCall(name="click", args={"index": 31}), url, target="button:APPLY")
+    assert a != b
+
+
+async def test_act_node_sigs_carry_element_identity_from_the_observation():
+    from langchain_core.messages import AIMessage
+
+    from app.agent.nodes.act import build_act_node
+    from app.telemetry.store import InMemoryTrajectoryStore
+    from app.tools.dispatcher import ToolDispatcher
+    from browser_agent_contracts import Element, Observation, Viewport
+    from tests.fakes.fake_browser import FakeBrowserSession
+
+    obs = Observation(url="https://x.test/", title="t", viewport=Viewport(width=1280, height=800),
+                      elements=[Element(index=66, role="button", name="SEARCH")])
+    s = AgentState(task="t", thread_id="t1", observation=obs)
+    s.messages = [AIMessage(content="go", tool_calls=[{"name": "Click", "args": {"index": 66}, "id": "1"}])]
+    node = build_act_node(ToolDispatcher(), FakeBrowserSession(), EventEmitter(BufferSink()),
+                          InMemoryTrajectoryStore())
+    delta = await node(s)
+    assert "button:SEARCH" in delta["recent_actions"][-1]
+
+
+async def test_degenerate_runaway_reasoning_is_clipped_before_entering_history():
+    # Observed live (MakeMyTrip): the model degenerated into "Let's click [56]. " repeated hundreds
+    # of times. Stored verbatim, that blob is re-sent every later turn and feeds the repetition.
+    runaway = "Let's click [56]. " * 3000                      # ~54k chars
+    llm = FakeLLMClient(turns=[ai(runaway, _CLICK)])
+    delta = await _reason(llm, _state([]))
+    stored = delta["messages"][0]
+    assert len(stored.content) < 5000
+    assert stored.tool_calls  # the action itself must survive the clip
+
+
 def _state_at(step: int):
     return AgentState(task="t", thread_id="t1", step=step, messages=[HumanMessage(content="page")])
 

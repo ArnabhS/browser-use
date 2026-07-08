@@ -17,14 +17,31 @@ _REPEATABLE_ACTIONS = {"scroll", "wait_for", "extract", "search_page", "find_ele
 _ACTION_WINDOW = 10
 
 
-def _action_sig(action, page_url: str = "") -> str | None:
+def _action_sig(action, page_url: str = "", target: str = "") -> str | None:
     """A signature identifying a committing action + its target ON a given page, or None for
     repeatable actions. Two calls collide (=loop) only when the same action hits the same target
     with the same args on the SAME page — so a repeated click that navigates to a new page each
-    time (e.g. picking the always-index autocomplete result) is progress, not a loop."""
+    time (e.g. picking the always-index autocomplete result) is progress, not a loop.
+
+    `target` is the acted-on element's "role:name" identity: pages that renumber [N] every turn
+    (MakeMyTrip) would otherwise make every re-click of the same button look like a new action."""
     if action is None or action.name in _REPEATABLE_ACTIONS:
         return None
-    return f"{page_url}|{action.name}:{json.dumps(action.args, sort_keys=True)[:120]}"
+    args = dict(action.args)
+    if target and "index" in args:
+        args["index"] = target
+    return f"{page_url}|{action.name}:{json.dumps(args, sort_keys=True)[:160]}"
+
+
+def _target_identity(action, observation) -> str:
+    """The acted-on element's "role:name" from the observation the action was decided against."""
+    idx = action.args.get("index") if action is not None else None
+    if idx is None or observation is None:
+        return ""
+    for el in observation.elements:
+        if el.index == idx:
+            return f"{el.role}:{el.name}"
+    return ""
 
 
 def build_act_node(
@@ -57,7 +74,8 @@ def build_act_node(
         # The page the action was performed on — same action on a new page each turn is progress,
         # not a loop (state.observation is the pre-action page the tool call was decided against).
         page_url = state.observation.url if state.observation else ""
-        sig = _action_sig(merged.get("last_action"), page_url)
+        sig = _action_sig(merged.get("last_action"), page_url,
+                          _target_identity(merged.get("last_action"), state.observation))
         if sig is not None:
             merged["recent_actions"] = (state.recent_actions + [sig])[-_ACTION_WINDOW:]
 

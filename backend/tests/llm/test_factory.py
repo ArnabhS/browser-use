@@ -14,3 +14,11 @@ def test_build_chat_model_binds_tools_and_targets_openrouter():
         tools_attr = getattr(model, "tools", None) or []
         names = {t["function"]["name"] for t in tools_attr if isinstance(t, dict) and "function" in t}
     assert {"Click", "Complete"} <= names
+
+
+def test_build_chat_model_caps_output_tokens():
+    # Unbounded output let a degenerate repetition loop ("Let's click [56]." x hundreds) run to the
+    # provider limit and then poison history. One reasoning block + one tool call needs far less.
+    s = Settings(openrouter_api_key="sk-test", agent_model="x/y")
+    model = build_chat_model(s)
+    assert model.bound.max_tokens == s.llm_max_output_tokens > 0

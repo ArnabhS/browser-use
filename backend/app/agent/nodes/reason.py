@@ -30,6 +30,25 @@ def _has_reasoning(msg: AIMessage) -> bool:
     return len(_text(msg).strip()) >= 3
 
 
+# Sane reasoning is a few hundred chars; past this it's a degenerate repetition loop (observed
+# live: "Let's click [56]. " x hundreds). Clip before the message enters history — re-sending the
+# blob every later turn both burns tokens and feeds the model its own repetition to continue.
+_MAX_REASON_CHARS = 3000
+
+
+def _clip_runaway(msg: AIMessage) -> AIMessage:
+    txt = _text(msg)
+    if len(txt) <= _MAX_REASON_CHARS:
+        return msg
+    return AIMessage(
+        content=txt[:_MAX_REASON_CHARS] + " …[reasoning truncated: output ran away]",
+        tool_calls=msg.tool_calls,
+        id=msg.id,
+        usage_metadata=getattr(msg, "usage_metadata", None),
+        response_metadata=msg.response_metadata,
+    )
+
+
 def _assessment_line(msg: AIMessage) -> str | None:
     """The text of a leading `Assessment:` line, if the reasoning opens with one."""
     for line in _text(msg).splitlines()[:3]:
@@ -137,6 +156,8 @@ def build_reason_node(llm: LLMClient, emitter: EventEmitter, max_steps: int = 25
                     "finished": True,
                     **nudge_delta,
                 }
+
+        ai = _clip_runaway(ai)
 
         # P0-3: the prompt asks the model to OPEN with an `Assessment:` of its last action. When it
         # does, surface it as a distinct cockpit signal. Deliberately NOT enforced via a retry — a
