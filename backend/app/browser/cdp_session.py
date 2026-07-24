@@ -27,6 +27,7 @@ import shutil
 from browser_agent_contracts import ActionCall, ActionResult, Observation, Tab
 
 from app.browser.cdp.launcher import launch_chrome
+from app.browser.select_support import SELECT_JS, select_result
 from app.observation.extract_cdp import eval_json, extract_cdp
 from app.observation.funnel.pipeline import run_funnel
 from app.observation.page_query import (
@@ -50,19 +51,6 @@ _STEALTH_JS = (
     "})();"
 )
 
-# Set a native <select> to an option by visible text or value, at a viewport point.
-_SELECT_JS = r"""
-([cx, cy, value]) => {
-  const el = document.elementFromPoint(cx, cy);
-  const sel = el && (el.tagName === 'SELECT' ? el : el.closest('select'));
-  if (!sel) return false;
-  let opt = [...sel.options].find(o => o.value === value || o.text === value);
-  if (!opt) return false;
-  sel.value = opt.value;
-  sel.dispatchEvent(new Event('change', { bubbles: true }));
-  return true;
-}
-"""
 
 # The href of the anchor at a viewport point (for open_in_new_tab + the click-nav fallback).
 _HREF_JS = r"""
@@ -541,10 +529,9 @@ class CDPSession:
         if geo is None:
             return ActionResult(success=False, reason=f"stale index {args.get('index')}")
         cx, cy = geo
-        ok = await self._eval(f"({_SELECT_JS})({json.dumps([cx, cy, str(args['value'])])})")
+        res = await self._eval(f"({SELECT_JS})({json.dumps([cx, cy, str(args['value'])])})")
         await self._settle()
-        return ActionResult(success=bool(ok),
-                            reason=f"selected {args['value']}" if ok else "option/select not found")
+        return select_result(res, args["value"])
 
     async def _press_key(self, key: str) -> ActionResult:
         spec = _KEYS.get(key.lower())

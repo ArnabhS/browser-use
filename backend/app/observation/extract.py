@@ -31,7 +31,9 @@ LISTENER_TAG_JS = r"""
 EXTRACT_JS = r"""
 () => {
   const INTERACTIVE_TAGS = new Set(['a','button','input','select','textarea','summary']);
-  const INTERACTIVE_ROLES = new Set(['button','link','checkbox','radio','tab','menuitem','textbox','combobox','switch','option']);
+  // 'treeitem': Select2 v4.0 (bundled by Zoho Forms et al.) renders an OPEN dropdown's options as
+  // role=tree > role=treeitem — without it the whole list collapses into one un-clickable blob.
+  const INTERACTIVE_ROLES = new Set(['button','link','checkbox','radio','tab','menuitem','textbox','combobox','switch','option','treeitem']);
   // React/RN-web render controls as plain <div>s with no role/cursor/onclick/tabindex — the click
   // handler lives only in the component props React stashes on the DOM node under __reactProps$<hash>
   // (or __reactEventHandlers$ on React 16). RN-web maps onPress→onClick. Detect those handlers so
@@ -209,7 +211,7 @@ _PROBE_JS = r"""
 (focus) => {
   const f = (focus || '').toLowerCase();
   const ITAGS = new Set(['a','button','input','select','textarea','summary']);
-  const IROLES = new Set(['button','link','checkbox','radio','tab','menuitem','textbox','combobox','switch','option']);
+  const IROLES = new Set(['button','link','checkbox','radio','tab','menuitem','textbox','combobox','switch','option','treeitem']);
   const wouldExtract = (el) => {
     const tag = el.tagName.toLowerCase();
     if (ITAGS.has(tag)) return true;

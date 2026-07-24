@@ -9,6 +9,7 @@ from browser_agent_contracts import ActionCall, ActionResult, Observation, Tab
 from playwright.async_api import Browser, Page, TimeoutError as PWTimeout, async_playwright
 
 from app.browser.screencast import OnFrame, ScreencastStreamer
+from app.browser.select_support import SELECT_JS, select_result
 from app.browser.som_overlay import render_som
 from app.browser.tab_registry import TabRegistry
 from app.observation.extract import LISTENER_TAG_JS, extract, probe_dom
@@ -24,18 +25,6 @@ from app.observation.page_query import (
 
 logger = logging.getLogger(__name__)
 
-_SELECT_JS = """
-([cx, cy, value]) => {
-  const el = document.elementFromPoint(cx, cy);
-  const sel = el && (el.tagName === 'SELECT' ? el : el.closest('select'));
-  if (!sel) return false;
-  let opt = [...sel.options].find(o => o.value === value || o.text === value);
-  if (!opt) return false;
-  sel.value = opt.value;
-  sel.dispatchEvent(new Event('change', { bubbles: true }));
-  return true;
-}
-"""
 
 # Walk up from a viewport point to the nearest scrollable ancestor and scroll IT. Used both
 # as the page-scroll fallback (point = viewport centre, tryWindow=true) and for index-targeted
@@ -474,10 +463,9 @@ class LocalCDPSession:
             if geo is None:
                 return ActionResult(success=False, reason=f"stale index {args.get('index')}")
             cx, cy = geo
-            ok = await self.page.evaluate(_SELECT_JS, [cx, cy, str(args["value"])])
+            res = await self.page.evaluate(SELECT_JS, [cx, cy, str(args["value"])])
             await self._settle()
-            return ActionResult(success=bool(ok),
-                                reason=f"selected {args['value']}" if ok else "option/select not found")
+            return select_result(res, args["value"])
         if name == "new_tab":
             page = await self.page.context.new_page()
             await page.goto(args["url"])
